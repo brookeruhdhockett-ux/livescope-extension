@@ -250,12 +250,16 @@ async function executeFetch(params) {
           id: params.creatorId,
           startDate: params.startDate,
           endDate: params.endDate,
-          catoids: [],
+          cateIds: [],
           sellerId: '',
           pageNo: 1,
           pageSize: 50,
-          sort: { filter: 'revenue', type: 'DESC' },
-          videoType: 'LIVE',
+          sort: [{ field: 'revenue', type: 'DESC' }],
+          videoType: '',
+          'video.filter.ad.view_ratio': '',
+          'video.filter.ad.revenue_ratio': '',
+          'video.filter.ad.daily_cost': '',
+          'video.filter.ad.daily_roas': '',
           authority: true
         })
       });
