@@ -112,8 +112,16 @@ async function startActiveFetch() {
       });
 
       if (lsResponse && lsResponse.success) {
-        const livestreams = Array.isArray(lsResponse.data) ? lsResponse.data : (lsResponse.data?.list || []);
-        log(`${handle}: ${livestreams.length} livestreams`, 'success');
+        // Debug: log raw response structure for first creator
+        if (i === 0) {
+          log(`DEBUG response type: ${typeof lsResponse.data}, isArray: ${Array.isArray(lsResponse.data)}`);
+          if (lsResponse.data && typeof lsResponse.data === 'object') {
+            log(`DEBUG keys: ${Object.keys(lsResponse.data).join(', ')}`);
+            log(`DEBUG sample: ${JSON.stringify(lsResponse.data).substring(0, 300)}`);
+          }
+        }
+        const livestreams = Array.isArray(lsResponse.data) ? lsResponse.data : (lsResponse.data?.list || lsResponse.data?.data || []);
+        log(`${handle}: ${livestreams.length} livestreams`, livestreams.length > 0 ? 'success' : 'error');
 
         creator._livestreams = livestreams;
         creator._livestreamCount = livestreams.length;
