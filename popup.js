@@ -129,8 +129,8 @@ function processAndRender(captures) {
     itemList.forEach(item => {
       if (!item || typeof item !== 'object') return;
 
-      // PRODUCTS — from explicit product endpoints
-      if (type === 'products') {
+      // PRODUCTS — from product endpoints OR livestream detail pages
+      if (type === 'products' || type === 'livestream_detail') {
         const prod = {
           title: item.title || item.productName || item.product_name || item.name || '',
           price: item.price || item.unitPrice || item.unit_price || 0,
@@ -148,9 +148,10 @@ function processAndRender(captures) {
         return;
       }
 
-      // Try to identify creators from any response
-      const handle = item.handle || item.nickname || item.username || '';
-      if (handle && !creators.has(handle)) {
+      // Try to identify creators from any response (skip user profile junk)
+      const handle = item.handle || item.nickname || '';
+      const isJunk = !handle || handle.includes('EMAIL:') || handle.includes('@') || handle.length > 60;
+      if (handle && !isJunk && !creators.has(handle)) {
         const id = String(item.uid || item.id || '');
         creators.set(handle, {
           handle, nickname: item.nickname || '', revenue: item.revenue,

@@ -46,10 +46,21 @@
 
   function captureResponse(url, method, requestBody, responseText) {
     try {
-      const data = JSON.parse(responseText);
-      if (!data || !data.success) return;
+      const parsed = JSON.parse(responseText);
+      if (!parsed) return;
 
       const urlPath = new URL(url, window.location.origin).pathname;
+
+      // Skip noise endpoints
+      if (urlPath.includes('/user/') || urlPath.includes('/api/firstDay') ||
+          urlPath.includes('/api/configurations') || urlPath.includes('/features')) return;
+
+      // Accept responses with success:true OR code:0 OR just having a data field
+      const isSuccess = parsed.success === true || parsed.code === 0 || parsed.code === '0';
+      const responseData = parsed.data || parsed.result || parsed.list || parsed.records;
+      if (!isSuccess && !responseData) return;
+
+      const data = responseData || parsed.data;
 
       let params = {};
       if (requestBody) {
@@ -62,11 +73,13 @@
         captureType = 'creator_rankings';
       } else if (urlPath.includes('/creator/detail/video/queryList') || urlPath.includes('/creator/detail/livestream/queryList')) {
         captureType = 'creator_livestreams';
-      } else if (urlPath.includes('/video/detail/stat/queryProductList') || urlPath.includes('queryProductList')) {
+      } else if (urlPath.includes('queryProductList') || urlPath.includes('ProductList') || urlPath.includes('productList')) {
         captureType = 'products';
+      } else if (urlPath.includes('/livestream/detail') && urlPath.includes('query')) {
+        captureType = 'livestream_detail';
       } else if (urlPath.includes('/creator/detail') && urlPath.includes('query')) {
         captureType = 'creator_detail';
-      } else if (urlPath.includes('/video/detail')) {
+      } else if (urlPath.includes('/video/detail') || urlPath.includes('/livestream/detail')) {
         captureType = 'video_detail';
       }
 
@@ -79,8 +92,8 @@
         method,
         pageUrl: pageUrl.substring(0, 200),
         params,
-        data: data.data,
-        rawDataLength: Array.isArray(data.data) ? data.data.length : 1
+        data: data,
+        rawDataLength: Array.isArray(data) ? data.length : 1
       };
 
       window.postMessage({ type: 'LIVESCOPE_CAPTURE', record }, '*');
