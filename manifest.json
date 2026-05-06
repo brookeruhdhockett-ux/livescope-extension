@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "LiveScope — Kalodata Collector",
-  "version": "3.0.0",
-  "description": "Passively captures Kalodata API data while you browse. Active mode bulk-fetches creator livestream data.",
+  "version": "4.0.0",
+  "description": "Capture Kalodata creator data, fetch livestreams + products, export to LiveScope.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://www.kalodata.com/*"],
   "action": {
@@ -23,6 +23,12 @@
     {
       "matches": ["https://www.kalodata.com/*"],
       "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.kalodata.com/*"],
+      "js": ["bridge.js"],
       "run_at": "document_start"
     }
   ]

@@ -1,9 +1,8 @@
-// Intercepts all XHR/fetch responses from Kalodata's API
-// Runs at document_start so we catch everything
+// Runs in MAIN world (page context) — patches XHR/fetch to capture Kalodata API responses
+// Sends data to bridge.js via postMessage
 (function() {
   'use strict';
 
-  // Patch XMLHttpRequest
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
 
@@ -25,7 +24,6 @@
     return origSend.call(this, body);
   };
 
-  // Patch fetch
   const origFetch = window.fetch;
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' ? input : input.url;
@@ -51,65 +49,27 @@
       const data = JSON.parse(responseText);
       if (!data || !data.success) return;
 
-      // Determine the endpoint name from URL
       const urlPath = new URL(url, window.location.origin).pathname;
       const endpoint = urlPath.split('/').pop();
 
-      // Parse request body for context
       let params = {};
       if (requestBody) {
         try { params = JSON.parse(requestBody); } catch(e) {}
       }
 
-      // Get the current page context
       const pageUrl = window.location.href;
-      const pageType = detectPageType(pageUrl);
-
       const record = {
         timestamp: new Date().toISOString(),
         endpoint,
         url: url.substring(0, 200),
         method,
-        pageType,
         pageUrl: pageUrl.substring(0, 200),
         params,
         data: data.data,
         rawDataLength: Array.isArray(data.data) ? data.data.length : 1
       };
 
-      // Send to extension storage via custom event
-      window.postMessage({
-        type: 'LIVESCOPE_CAPTURE',
-        record
-      }, '*');
-
-    } catch(e) {
-      // Not JSON or parse error — skip
-    }
+      window.postMessage({ type: 'LIVESCOPE_CAPTURE', record }, '*');
+    } catch(e) {}
   }
-
-  function detectPageType(url) {
-    if (url.includes('/livestream/') || url.includes('livestreamDetail')) return 'livestream_detail';
-    if (url.includes('/livestream')) return 'livestream_rankings';
-    if (url.includes('/creator/') || url.includes('creatorDetail')) return 'creator_detail';
-    if (url.includes('/creator')) return 'creator_rankings';
-    if (url.includes('/product/')) return 'product_detail';
-    if (url.includes('/product')) return 'product_rankings';
-    if (url.includes('/shop')) return 'shop';
-    return 'other';
-  }
-
-  // Listen for messages from the extension popup
-  window.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'LIVESCOPE_CAPTURE') {
-      chrome.storage.local.get(['captures'], function(result) {
-        const captures = result.captures || [];
-        captures.push(event.data.record);
-        // Keep last 5000 records max
-        if (captures.length > 5000) captures.splice(0, captures.length - 5000);
-        chrome.storage.local.set({ captures });
-      });
-    }
-  });
-
 })();
