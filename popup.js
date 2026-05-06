@@ -132,11 +132,12 @@ function processAndRender(captures) {
       // PRODUCTS — from product endpoints OR livestream detail pages
       if (type === 'products' || type === 'livestream_detail') {
         const prod = {
-          title: item.title || item.productName || item.product_name || item.name || '',
-          price: item.price || item.unitPrice || item.unit_price || 0,
+          title: item.product_title || item.title || item.productName || item.product_name || item.name || '',
+          price: item.unit_price || item.price || item.unitPrice || 0,
           revenue: item.revenue || 0,
           sale: item.sale || item.saleCount || item.sale_count || 0,
           id: item.id || item.productId || item.product_id || '',
+          seller: item.seller_id || '',
           creator: bestCreator
         };
         if (prod.title) {

@@ -53,7 +53,10 @@
 
       // Skip noise endpoints
       if (urlPath.includes('/user/') || urlPath.includes('/api/firstDay') ||
-          urlPath.includes('/api/configurations') || urlPath.includes('/features')) return;
+          urlPath.includes('/api/allLastDay') || urlPath.includes('/api/configurations') ||
+          urlPath.includes('/features') || urlPath.includes('/api/log') ||
+          urlPath.includes('/homepage/') || urlPath.includes('/focus/') ||
+          urlPath.includes('/access') || urlPath.includes('/count')) return;
 
       // Accept responses with success:true OR code:0 OR just having a data field
       const isSuccess = parsed.success === true || parsed.code === 0 || parsed.code === '0';
@@ -73,7 +76,7 @@
         captureType = 'creator_rankings';
       } else if (urlPath.includes('/creator/detail/video/queryList') || urlPath.includes('/creator/detail/livestream/queryList')) {
         captureType = 'creator_livestreams';
-      } else if (urlPath.includes('queryProductList') || urlPath.includes('ProductList') || urlPath.includes('productList')) {
+      } else if (urlPath.includes('queryProductList') || urlPath.includes('ProductList') || urlPath.includes('productList') || urlPath.includes('searchProducts')) {
         captureType = 'products';
       } else if (urlPath.includes('/livestream/detail') && urlPath.includes('query')) {
         captureType = 'livestream_detail';
