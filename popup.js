@@ -42,6 +42,7 @@ function showRecordingView() {
   document.getElementById('recordingView').style.display = 'block';
   document.getElementById('resultsView').style.display = 'none';
   document.getElementById('recordingIndicator').classList.add('active');
+  document.getElementById('liveStats').style.display = 'block';
 
   // Poll for new captures
   pollCaptures();
@@ -52,6 +53,7 @@ function showResultsView(captures) {
   document.getElementById('recordingView').style.display = 'none';
   document.getElementById('resultsView').style.display = 'block';
   document.getElementById('recordingIndicator').classList.remove('active');
+  document.getElementById('liveStats').style.display = 'none';
 
   processAndRender(captures);
 }
@@ -72,6 +74,30 @@ function pollCaptures() {
 
 function updateCaptureCount(captures) {
   document.getElementById('captureCounter').textContent = captures.length;
+
+  // Count by type for live stats
+  let creators = 0, streams = 0, prods = 0;
+  const seenHandles = new Set();
+  captures.forEach(c => {
+    const type = c.captureType || '';
+    if (type === 'creator_rankings') {
+      const items = unwrapData(c.data);
+      items.forEach(item => {
+        const h = item.handle || item.nickname || '';
+        if (h && !seenHandles.has(h)) { seenHandles.add(h); creators++; }
+      });
+    } else if (type === 'creator_livestreams' || type === 'creator_detail') {
+      const items = unwrapData(c.data);
+      streams += items.filter(i => i && (i.title || i.duration)).length;
+    } else if (type === 'products') {
+      const items = unwrapData(c.data);
+      prods += items.filter(i => i && (i.product_title || i.title)).length;
+    }
+  });
+
+  document.getElementById('liveCreators').textContent = creators;
+  document.getElementById('liveStreams').textContent = streams;
+  document.getElementById('liveProducts').textContent = prods;
 }
 
 // ===== PROCESS CAPTURED DATA =====
