@@ -131,32 +131,13 @@ function processAndRender(captures) {
     itemList.forEach(item => {
       if (!item || typeof item !== 'object') return;
 
-      // LIVESTREAMS — from creator detail pages
-      if (type === 'creator_livestreams' || type === 'creator_detail' ||
-          (item.duration || item.liveDuration || item.live_duration || item.gpm)) {
-        const ls = {
-          id: item.id || item.videoId || '',
-          title: item.title || item.description || '',
-          duration: item.duration || item.live_duration || item.liveDuration || 0,
-          revenue: item.revenue || 0,
-          gpm: item.gpm || 0,
-          sale: item.sale || 0,
-          views: item.views || item.viewCount || item.view_count || 0,
-          creator: bestCreator,
-          date: item.date || item.createTime || item.liveTime || ''
-        };
-        livestreams.push(ls);
+      // SKIP junk entries: no title AND no meaningful data
+      const hasTitle = !!(item.title || item.description);
+      const hasHandle = !!(item.handle || item.nickname || item.username);
+      const hasMeaningfulRevenue = item.revenue && parseFloat(String(item.revenue).replace(/[$,k]/gi, '')) > 0;
 
-        if (bestCreator && creators.has(bestCreator)) {
-          const cr = creators.get(bestCreator);
-          cr.livestreams.push(ls);
-          if (ls.duration) cr.durations.push(ls.duration);
-        }
-      }
-
-      // PRODUCTS — from product list endpoints
-      if (type === 'products' || item.productName || item.product_name ||
-          (item.title && (item.price || item.unitPrice || item.unit_price))) {
+      // PRODUCTS — ONLY from explicit product endpoints (queryProductList)
+      if (type === 'products') {
         const prod = {
           title: item.title || item.productName || item.product_name || item.name || '',
           price: item.price || item.unitPrice || item.unit_price || 0,
@@ -175,11 +156,39 @@ function processAndRender(captures) {
             }
           }
         }
+        return; // Don't also process as livestream
       }
 
-      // GENERIC FALLBACK for unknown types — try to identify by shape
-      if (type === 'unknown' || type === 'video_detail') {
-        if ((item.handle || item.nickname) && !creators.has(item.handle || item.nickname)) {
+      // LIVESTREAMS/VIDEOS — from creator detail pages
+      // Must have a title or handle to be meaningful (skip chart/trend data)
+      if (type === 'creator_livestreams' || type === 'creator_detail' || type === 'video_detail') {
+        if (!hasTitle && !hasHandle) return; // Skip junk entries (chart data with only raw numbers)
+
+        const ls = {
+          id: item.id || item.videoId || '',
+          title: item.title || item.description || '',
+          duration: item.duration || item.live_duration || item.liveDuration || 0,
+          revenue: item.revenue || 0,
+          gpm: item.gpm || 0,
+          sale: item.sale || 0,
+          views: item.views || item.viewCount || item.view_count || 0,
+          creator: bestCreator,
+          date: item.date || item.createTime || item.liveTime || ''
+        };
+        livestreams.push(ls);
+
+        if (bestCreator && creators.has(bestCreator)) {
+          const cr = creators.get(bestCreator);
+          cr.livestreams.push(ls);
+          if (ls.duration) cr.durations.push(ls.duration);
+        }
+        return;
+      }
+
+      // UNKNOWN TYPE — only process if it has identifiable content
+      if (type === 'unknown') {
+        // Creator-like
+        if (hasHandle && !creators.has(item.handle || item.nickname)) {
           const handle = item.handle || item.nickname || '';
           const id = String(item.uid || item.id || '');
           creators.set(handle, {
@@ -188,6 +197,15 @@ function processAndRender(captures) {
             id: id, livestreams: [], products: [], durations: []
           });
           if (id) idToHandle.set(id, handle);
+        }
+        // Livestream-like (must have title)
+        if (hasTitle && (item.duration || item.gpm)) {
+          livestreams.push({
+            id: item.id || '', title: item.title || item.description || '',
+            duration: item.duration || 0, revenue: item.revenue || 0,
+            gpm: item.gpm || 0, sale: item.sale || 0, views: item.views || 0,
+            creator: bestCreator, date: item.date || ''
+          });
         }
       }
     });
@@ -223,16 +241,29 @@ function processAndRender(captures) {
     </tr>`);
   });
 
-  // Show unmatched livestreams grouped
-  const orphans = livestreams.filter(ls => !ls.creator || !creators.has(ls.creator));
+  // Show unmatched livestreams/videos that have titles
+  const orphans = livestreams.filter(ls => (!ls.creator || !creators.has(ls.creator)) && ls.title);
   if (orphans.length > 0) {
-    rows.push(`<tr><td colspan="4" style="color:#777;font-size:10px;padding:6px 8px;border-bottom:1px solid #333">${orphans.length} unmatched livestreams</td></tr>`);
-    orphans.slice(0, 10).forEach(ls => {
-      rows.push(`<tr style="color:#888">
-        <td>${esc(ls.title).substring(0, 30) || '—'}</td>
+    rows.push(`<tr><td colspan="4" style="color:#4ecdc4;font-size:10px;padding:8px;border-bottom:1px solid #333;font-weight:600">${orphans.length} videos/streams (browsed)</td></tr>`);
+    orphans.forEach(ls => {
+      rows.push(`<tr>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(ls.title)}">${esc(ls.title).substring(0, 40)}</td>
         <td>${fmtRevenue(ls.revenue)}</td>
-        <td>${fmtDuration(ls.duration)}</td>
-        <td class="products">—</td>
+        <td>${fmtDuration(ls.duration) || '—'}</td>
+        <td class="products">${fmtNum(ls.sale) ? fmtNum(ls.sale) + ' sold' : '—'}</td>
+      </tr>`);
+    });
+  }
+
+  // Show products if any
+  if (products.length > 0) {
+    rows.push(`<tr><td colspan="4" style="color:#4ecdc4;font-size:10px;padding:8px;border-bottom:1px solid #333;font-weight:600">${products.length} products captured</td></tr>`);
+    products.forEach(p => {
+      rows.push(`<tr>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.title)}">${esc(p.title).substring(0, 40)}</td>
+        <td>${fmtRevenue(p.revenue)}</td>
+        <td>${fmtPrice(p.price)}</td>
+        <td class="products">${fmtNum(p.sale) ? fmtNum(p.sale) + ' sold' : '—'}</td>
       </tr>`);
     });
   }
@@ -299,6 +330,13 @@ function fmtNum(val) {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return String(Math.round(n));
+}
+
+function fmtPrice(val) {
+  if (!val && val !== 0) return '—';
+  const n = typeof val === 'string' ? parseFloat(val.replace(/[$,]/g, '')) : val;
+  if (isNaN(n) || n <= 0) return '—';
+  return '$' + n.toFixed(2);
 }
 
 function esc(str) {
