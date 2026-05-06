@@ -111,7 +111,7 @@ function processAndRender(captures) {
     });
   });
 
-  // PASS 2: Process livestreams, products, and everything else
+  // PASS 2: Process ALL non-ranking captures
   captures.forEach(c => {
     if (!c.data) return;
     const type = c.captureType || 'unknown';
@@ -120,8 +120,6 @@ function processAndRender(captures) {
     // Figure out which creator this capture belongs to
     const pageCreatorId = extractCreatorIdFromUrl(c.pageUrl);
     const creatorHandle = idToHandle.get(pageCreatorId) || '';
-
-    // Also check the request params for creator ID
     const paramId = c.params ? String(c.params.id || '') : '';
     const creatorFromParams = idToHandle.get(paramId) || '';
     const bestCreator = creatorHandle || creatorFromParams;
@@ -131,12 +129,7 @@ function processAndRender(captures) {
     itemList.forEach(item => {
       if (!item || typeof item !== 'object') return;
 
-      // SKIP junk entries: no title AND no meaningful data
-      const hasTitle = !!(item.title || item.description);
-      const hasHandle = !!(item.handle || item.nickname || item.username);
-      const hasMeaningfulRevenue = item.revenue && parseFloat(String(item.revenue).replace(/[$,k]/gi, '')) > 0;
-
-      // PRODUCTS — ONLY from explicit product endpoints (queryProductList)
+      // PRODUCTS — from explicit product endpoints
       if (type === 'products') {
         const prod = {
           title: item.title || item.productName || item.product_name || item.name || '',
@@ -144,68 +137,57 @@ function processAndRender(captures) {
           revenue: item.revenue || 0,
           sale: item.sale || item.saleCount || item.sale_count || 0,
           id: item.id || item.productId || item.product_id || '',
-          image: item.image || item.coverUrl || item.cover_url || '',
           creator: bestCreator
         };
         if (prod.title) {
           products.push(prod);
           if (bestCreator && creators.has(bestCreator)) {
-            const cr = creators.get(bestCreator);
-            if (!cr.products.find(p => p.title === prod.title)) {
-              cr.products.push(prod);
-            }
+            creators.get(bestCreator).products.push(prod);
           }
-        }
-        return; // Don't also process as livestream
-      }
-
-      // LIVESTREAMS/VIDEOS — from creator detail pages
-      // Must have a title or handle to be meaningful (skip chart/trend data)
-      if (type === 'creator_livestreams' || type === 'creator_detail' || type === 'video_detail') {
-        if (!hasTitle && !hasHandle) return; // Skip junk entries (chart data with only raw numbers)
-
-        const ls = {
-          id: item.id || item.videoId || '',
-          title: item.title || item.description || '',
-          duration: item.duration || item.live_duration || item.liveDuration || 0,
-          revenue: item.revenue || 0,
-          gpm: item.gpm || 0,
-          sale: item.sale || 0,
-          views: item.views || item.viewCount || item.view_count || 0,
-          creator: bestCreator,
-          date: item.date || item.createTime || item.liveTime || ''
-        };
-        livestreams.push(ls);
-
-        if (bestCreator && creators.has(bestCreator)) {
-          const cr = creators.get(bestCreator);
-          cr.livestreams.push(ls);
-          if (ls.duration) cr.durations.push(ls.duration);
         }
         return;
       }
 
-      // UNKNOWN TYPE — only process if it has identifiable content
-      if (type === 'unknown') {
-        // Creator-like
-        if (hasHandle && !creators.has(item.handle || item.nickname)) {
-          const handle = item.handle || item.nickname || '';
-          const id = String(item.uid || item.id || '');
-          creators.set(handle, {
-            handle, nickname: item.nickname || '', revenue: item.revenue,
-            sale: item.sale, followers: item.followers,
-            id: id, livestreams: [], products: [], durations: []
-          });
-          if (id) idToHandle.set(id, handle);
-        }
-        // Livestream-like (must have title)
-        if (hasTitle && (item.duration || item.gpm)) {
-          livestreams.push({
-            id: item.id || '', title: item.title || item.description || '',
-            duration: item.duration || 0, revenue: item.revenue || 0,
-            gpm: item.gpm || 0, sale: item.sale || 0, views: item.views || 0,
-            creator: bestCreator, date: item.date || ''
-          });
+      // Try to identify creators from any response
+      const handle = item.handle || item.nickname || item.username || '';
+      if (handle && !creators.has(handle)) {
+        const id = String(item.uid || item.id || '');
+        creators.set(handle, {
+          handle, nickname: item.nickname || '', revenue: item.revenue,
+          sale: item.sale, followers: item.followers,
+          id: id, livestreams: [], products: [], durations: []
+        });
+        if (id) idToHandle.set(id, handle);
+      }
+
+      // LIVESTREAM/VIDEO — anything with a title or meaningful fields
+      const hasContent = item.title || item.description || item.duration || item.liveDuration || item.gpm;
+      if (hasContent) {
+        const title = item.title || item.description || '';
+        const dur = item.duration || item.live_duration || item.liveDuration || 0;
+        const rev = item.revenue || 0;
+
+        // Skip entries that are just noise (no title, no duration, tiny revenue)
+        if (!title && !dur) return;
+
+        const creator = handle || bestCreator;
+        const ls = {
+          id: item.id || item.videoId || '',
+          title: title,
+          duration: dur,
+          revenue: rev,
+          gpm: item.gpm || 0,
+          sale: item.sale || 0,
+          views: item.views || item.viewCount || item.view_count || 0,
+          creator: creator,
+          date: item.date || item.createTime || item.liveTime || ''
+        };
+        livestreams.push(ls);
+
+        if (creator && creators.has(creator)) {
+          const cr = creators.get(creator);
+          cr.livestreams.push(ls);
+          if (dur) cr.durations.push(dur);
         }
       }
     });
@@ -379,16 +361,33 @@ function exportCSV() {
 }
 
 function exportJSON() {
-  chrome.storage.local.get(['processedCreators', 'processedLivestreams', 'processedProducts'], function(result) {
+  chrome.storage.local.get(['processedCreators', 'processedLivestreams', 'processedProducts', 'captures'], function(result) {
     const json = JSON.stringify({
       creators: result.processedCreators || [],
       livestreams: result.processedLivestreams || [],
       products: result.processedProducts || [],
+      rawCaptures: (result.captures || []).map(c => ({
+        captureType: c.captureType,
+        urlPath: c.urlPath,
+        pageUrl: c.pageUrl,
+        params: c.params,
+        dataKeys: c.data ? (Array.isArray(c.data) ? 'array[' + c.data.length + ']' : Object.keys(c.data).join(',')) : 'null',
+        sampleItem: Array.isArray(c.data) && c.data[0] ? Object.keys(c.data[0]).join(',') : (c.data && c.data.records && c.data.records[0] ? Object.keys(c.data.records[0]).join(',') : 'n/a'),
+        firstItemSample: getFirstItem(c.data)
+      })),
       exportedAt: new Date().toISOString()
     }, null, 2);
     downloadFile(json, `livescope-${new Date().toISOString().slice(0,10)}.json`, 'application/json');
     setStatus('JSON exported');
   });
+}
+
+function getFirstItem(data) {
+  if (!data) return null;
+  if (Array.isArray(data) && data[0]) return data[0];
+  if (data.records && data.records[0]) return data.records[0];
+  if (data.list && data.list[0]) return data.list[0];
+  return typeof data === 'object' ? data : null;
 }
 
 function sendToLiveScope() {
