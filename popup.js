@@ -109,32 +109,69 @@ function processAndRender(captures) {
   // Build ID-to-handle lookup from creator rankings first
   const idToHandle = new Map();
 
-  // PASS 1: Extract all creators from rankings captures
+  // PASS 1: Extract creators from rankings AND detail endpoints
   captures.forEach(c => {
     if (!c.data) return;
     const type = c.captureType || 'unknown';
-    if (type !== 'creator_rankings') return;
+    const urlPath = c.urlPath || '';
+    const pageCreatorId = extractCreatorIdFromUrl(c.pageUrl);
+    const paramId = c.params ? String(c.params.id || '') : '';
 
-    const itemList = unwrapData(c.data);
-    itemList.forEach(item => {
-      if (!item || typeof item !== 'object') return;
-      const handle = item.handle || item.nickname || item.username || '';
-      if (!handle) return;
-
-      const id = String(item.uid || item.id || '');
-      creators.set(handle, {
-        handle,
-        nickname: item.nickname || item.handle || '',
-        revenue: item.revenue,
-        sale: item.sale,
-        followers: item.followers,
-        id: id,
-        livestreams: [],
-        products: [],
-        durations: []
+    // Creator rankings — list of creators
+    if (type === 'creator_rankings') {
+      const itemList = unwrapData(c.data);
+      itemList.forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        const handle = item.handle || item.nickname || item.username || '';
+        if (!handle) return;
+        const id = String(item.uid || item.id || '');
+        if (!creators.has(handle)) {
+          creators.set(handle, {
+            handle, nickname: item.nickname || '', revenue: item.revenue || '',
+            sale: item.sale || '', followers: item.followers || item.follower_count || '',
+            id: id, livestreams: [], products: [], durations: []
+          });
+        }
+        if (id) idToHandle.set(id, handle);
       });
-      if (id) idToHandle.set(id, handle);
-    });
+    }
+
+    // Creator detail — single creator profile (has handle + id)
+    if (urlPath.endsWith('/creator/detail') || (type === 'unknown' && c.data && c.data.handle)) {
+      const item = c.data;
+      if (item && item.handle) {
+        const handle = item.handle;
+        const id = String(item.id || '');
+        if (!creators.has(handle)) {
+          creators.set(handle, {
+            handle, nickname: item.nickname || '', revenue: '', sale: '',
+            followers: item.follower_count || item.followers || '',
+            id: id, livestreams: [], products: [], durations: []
+          });
+        } else {
+          const cr = creators.get(handle);
+          if (!cr.followers && item.follower_count) cr.followers = item.follower_count;
+          if (!cr.id && id) cr.id = id;
+          if (!cr.nickname && item.nickname) cr.nickname = item.nickname;
+        }
+        if (id) idToHandle.set(id, handle);
+      }
+    }
+
+    // Creator total — revenue/sale summary (no handle, matched by page/param id)
+    if (urlPath.includes('/creator/detail/total')) {
+      const item = c.data;
+      if (item && (item.revenue || item.sale)) {
+        const creatorId = paramId || pageCreatorId;
+        const handle = idToHandle.get(creatorId);
+        if (handle && creators.has(handle)) {
+          const cr = creators.get(handle);
+          if (!cr.revenue || cr.revenue === '') cr.revenue = item.revenue || '';
+          if (!cr.sale || cr.sale === '') cr.sale = item.sale || '';
+          if (!cr.followers || cr.followers === '') cr.followers = item.followers || cr.followers;
+        }
+      }
+    }
   });
 
   // PASS 2: Process ALL non-ranking captures
@@ -373,13 +410,13 @@ function exportCSV() {
     const csv = [
       headers.join(','),
       ...creators.map(cr => [
-        `"${cr.handle}"`,
-        `"${cr.revenue}"`,
-        `"${cr.sale}"`,
-        `"${cr.followers}"`,
-        `"${cr.livestreams.length}"`,
-        `"${cr.durations.join('; ')}"`,
-        `"${cr.products.map(p => p.title).join('; ').replace(/"/g, '""')}"`
+        `"${cr.handle || ''}"`,
+        `"${cr.revenue || ''}"`,
+        `"${cr.sale || ''}"`,
+        `"${cr.followers || ''}"`,
+        `"${(cr.livestreams || []).length}"`,
+        `"${(cr.durations || []).join('; ')}"`,
+        `"${(cr.products || []).map(p => p.title).join('; ').replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
 
@@ -430,13 +467,13 @@ function sendToLiveScope() {
     const csv = [
       headers.join(','),
       ...creators.map(cr => [
-        `"${cr.handle}"`,
-        `"${cr.revenue}"`,
-        `"${cr.sale}"`,
-        `"${cr.followers}"`,
-        `"${cr.livestreams.length}"`,
-        `"${cr.durations.join('; ')}"`,
-        `"${cr.products.map(p => p.title).join('; ').replace(/"/g, '""')}"`
+        `"${cr.handle || ''}"`,
+        `"${cr.revenue || ''}"`,
+        `"${cr.sale || ''}"`,
+        `"${cr.followers || ''}"`,
+        `"${(cr.livestreams || []).length}"`,
+        `"${(cr.durations || []).join('; ')}"`,
+        `"${(cr.products || []).map(p => p.title).join('; ').replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
 

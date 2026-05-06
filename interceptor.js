@@ -52,11 +52,11 @@
       const urlPath = new URL(url, window.location.origin).pathname;
 
       // Skip noise endpoints
-      if (urlPath.includes('/user/') || urlPath.includes('/api/firstDay') ||
-          urlPath.includes('/api/allLastDay') || urlPath.includes('/api/configurations') ||
-          urlPath.includes('/features') || urlPath.includes('/api/log') ||
-          urlPath.includes('/homepage/') || urlPath.includes('/focus/') ||
-          urlPath.includes('/access') || urlPath.includes('/count')) return;
+      if (urlPath.includes('/user/') || urlPath.includes('/api/') ||
+          urlPath.includes('/features') || urlPath.includes('/homepage/') ||
+          urlPath.includes('/focus/') || urlPath.includes('/access') ||
+          urlPath.includes('/count') || urlPath.includes('/history/') ||
+          urlPath.includes('searchShopList') || urlPath.includes('topLabel')) return;
 
       // Accept responses with success:true OR code:0 OR just having a data field
       const isSuccess = parsed.success === true || parsed.code === 0 || parsed.code === '0';
