@@ -9,6 +9,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runInKaloTab(buildCreatorListCode(msg)).then(sendResponse);
     return true;
   }
+  if (msg.type === 'ACTIVE_FETCH_PRODUCTS') {
+    runInKaloTab(buildProductFetchCode(msg)).then(sendResponse);
+    return true;
+  }
 });
 
 async function runInKaloTab(code) {
@@ -54,6 +58,15 @@ function buildCreatorListCode(msg) {
     endDate: msg.endDate,
     pageNo: msg.pageNo || 1,
     pageSize: msg.pageSize || 20
+  };
+}
+
+function buildProductFetchCode(msg) {
+  return {
+    action: 'fetch_products',
+    livestreamId: msg.livestreamId,
+    pageNo: msg.pageNo || 1,
+    pageSize: msg.pageSize || 50
   };
 }
 
@@ -134,6 +147,25 @@ async function executeFetch(params) {
         return { success: false, error: 'Not JSON: ' + text.substring(0, 100), creatorId: params.creatorId, creatorName: params.creatorName };
       }
       return { success: !!data.success, data: data.data, creatorId: params.creatorId, creatorName: params.creatorName, endpoint: 'video' };
+
+    } else if (params.action === 'fetch_products') {
+      const resp = await fetch('https://www.kalodata.com/livestream/detail/product/queryList', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: params.livestreamId,
+          pageNo: params.pageNo,
+          pageSize: params.pageSize,
+          sort: { filter: 'revenue', type: 'DESC' }
+        })
+      });
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); } catch(e) {
+        return { success: false, error: 'Not JSON: ' + text.substring(0, 100) };
+      }
+      return { success: !!data.success, data: data.data, livestreamId: params.livestreamId };
 
     } else if (params.action === 'fetch_rankings') {
       const resp = await fetch('https://www.kalodata.com/livestream/queryList', {

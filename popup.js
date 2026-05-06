@@ -197,16 +197,63 @@ async function fetchTopCreators() {
     document.getElementById('creatorIds').value = ids.join('\n');
     log(`Found ${ids.length} unique creators`, 'success');
 
-    // Also load rankings directly as results (they already have the data we need)
+    // Load rankings as base results, then fetch products for each livestream
     activeResults = items.map(item => ({
       ...item,
       _creatorId: item.uid || item.id,
       _creatorName: item.handle || '',
+      _products: [],
       _fetchedAt: new Date().toISOString()
     }));
     renderActiveResults();
-    setStatus(`Loaded ${items.length} livestreams from ${ids.length} creators`);
+    setStatus(`Loaded ${items.length} livestreams — now fetching products...`);
+
+    // Fetch products for each livestream
+    fetchProductsForAll(items);
   });
+}
+
+async function fetchProductsForAll(items) {
+  const delay = parseInt(document.getElementById('fetchDelay').value) || 2000;
+  document.getElementById('progressBar').style.display = 'block';
+
+  for (let i = 0; i < items.length; i++) {
+    const ls = items[i];
+    const pct = Math.round(((i + 1) / items.length) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+
+    try {
+      const response = await sendMessageAsync({
+        type: 'ACTIVE_FETCH_PRODUCTS',
+        livestreamId: ls.id,
+        pageNo: 1,
+        pageSize: 50
+      });
+
+      if (response && response.success) {
+        const products = Array.isArray(response.data) ? response.data : (response.data?.list || []);
+        // Attach products to the matching result
+        const match = activeResults.find(r => r.id === ls.id);
+        if (match) {
+          match._products = products;
+          match._productNames = products.map(p => p.title || p.name || p.product_name || '').filter(Boolean);
+          match._productCount = products.length;
+        }
+        log(`${ls.handle || ls.id}: ${products.length} products`, 'success');
+      } else {
+        log(`${ls.handle || ls.id}: products ${response?.error || 'failed'}`, 'error');
+      }
+    } catch (e) {
+      log(`${ls.handle || ls.id}: ${e.message}`, 'error');
+    }
+
+    if (i < items.length - 1) await sleep(delay);
+  }
+
+  document.getElementById('progressFill').style.width = '100%';
+  renderActiveResults();
+  setStatus(`Done — ${activeResults.length} livestreams with products loaded`);
+  chrome.storage.local.set({ activeResults });
 }
 
 async function startActiveFetch() {
@@ -307,13 +354,15 @@ function renderActiveResults() {
     const duration = r.duration || r.live_duration || '';
     const revenue = r.revenue || r.gmv || '';
     const gpm = r.gpm || '';
-    const sale = r.sale || r.product_count || '';
+    const products = r._productNames && r._productNames.length > 0
+      ? r._productNames.slice(0, 3).join(', ') + (r._productNames.length > 3 ? ` +${r._productNames.length - 3} more` : '')
+      : (r._productCount || r.sale || '');
     return `<tr>
       <td>${creator}</td>
       <td>${duration}</td>
       <td>${revenue}</td>
       <td>${gpm}</td>
-      <td>${sale}</td>
+      <td>${products}</td>
     </tr>`;
   }).join('');
 
