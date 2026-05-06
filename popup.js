@@ -392,15 +392,28 @@ function formatRevenue(val) {
 // ===== ACTIVE MODE EXPORTS =====
 function exportActiveCSV() {
   if (activeResults.length === 0) {
-    setStatus('No active results to export');
+    // Try loading from storage
+    chrome.storage.local.get(['activeResults'], function(result) {
+      if (result.activeResults && result.activeResults.length > 0) {
+        activeResults = result.activeResults;
+        doExportActiveCSV();
+      } else {
+        setStatus('No active results to export');
+      }
+    });
     return;
   }
+  doExportActiveCSV();
+}
 
-  const headers = new Set(['creator', 'creator_id']);
+function doExportActiveCSV() {
+
+  const headers = new Set(['creator', 'creator_id', 'products']);
   const rows = activeResults.map(r => {
     const row = {
-      creator: r._creatorName || r.creator_name || r.username || '',
-      creator_id: r._creatorId || r.id || ''
+      creator: r._creatorName || r.handle || r.creator_name || '',
+      creator_id: r._creatorId || r.uid || r.id || '',
+      products: (r._productNames || []).join('; ')
     };
     Object.keys(r).forEach(k => {
       if (k.startsWith('_')) return;
@@ -425,20 +438,42 @@ function exportActiveCSV() {
 }
 
 function exportActiveJSON() {
+  const doExport = (data) => {
+    const json = JSON.stringify(data, null, 2);
+    downloadFile(json, `livescope-active-${new Date().toISOString().slice(0,10)}.json`, 'application/json');
+    setStatus('JSON exported');
+  };
+
   if (activeResults.length === 0) {
-    setStatus('No active results to export');
+    chrome.storage.local.get(['activeResults'], function(result) {
+      if (result.activeResults && result.activeResults.length > 0) {
+        activeResults = result.activeResults;
+        doExport(activeResults);
+      } else {
+        setStatus('No active results to export');
+      }
+    });
     return;
   }
-  const json = JSON.stringify(activeResults, null, 2);
-  downloadFile(json, `livescope-active-${new Date().toISOString().slice(0,10)}.json`, 'application/json');
-  setStatus('JSON exported');
+  doExport(activeResults);
 }
 
 function sendActiveToLiveScope() {
   if (activeResults.length === 0) {
-    setStatus('No active results to send');
+    chrome.storage.local.get(['activeResults'], function(result) {
+      if (result.activeResults && result.activeResults.length > 0) {
+        activeResults = result.activeResults;
+        doSendActiveToLiveScope();
+      } else {
+        setStatus('No active results to send');
+      }
+    });
     return;
   }
+  doSendActiveToLiveScope();
+}
+
+function doSendActiveToLiveScope() {
 
   const headers = new Set(['creator', 'creator_id']);
   const rows = activeResults.map(r => {
