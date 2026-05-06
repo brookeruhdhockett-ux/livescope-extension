@@ -223,43 +223,95 @@ async function fetchTopCreators() {
   });
 }
 
-async function fetchProductsForAll(items) {
+async function fetchProductsForAll(creators) {
   const delay = parseInt(document.getElementById('fetchDelay').value) || 2000;
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
   document.getElementById('progressBar').style.display = 'block';
 
-  for (let i = 0; i < items.length; i++) {
-    const ls = items[i];
-    const pct = Math.round(((i + 1) / items.length) * 100);
+  for (let i = 0; i < creators.length; i++) {
+    const creator = creators[i];
+    const handle = creator.handle || creator._creatorName || creator.id;
+    const creatorId = creator.id;
+    const pct = Math.round(((i + 1) / creators.length) * 100);
     document.getElementById('progressFill').style.width = pct + '%';
 
+    // Step 1: Get this creator's livestreams
+    log(`${handle}: fetching livestreams...`);
     try {
-      const startDate = document.getElementById('startDate').value;
-      const endDate = document.getElementById('endDate').value;
-      const response = await sendMessageAsync({
-        type: 'ACTIVE_FETCH_PRODUCTS',
-        livestreamId: ls.id,
+      const lsResponse = await sendMessageAsync({
+        type: 'ACTIVE_FETCH_CREATOR_LIVESTREAMS',
+        creatorId,
         startDate,
         endDate
       });
 
-      if (response && response.success) {
-        const products = Array.isArray(response.data) ? response.data : (response.data?.list || []);
-        // Attach products to the matching result
-        const match = activeResults.find(r => r.id === ls.id);
+      if (lsResponse && lsResponse.success) {
+        const livestreams = Array.isArray(lsResponse.data) ? lsResponse.data : (lsResponse.data?.list || []);
+        log(`${handle}: ${livestreams.length} livestreams found`, 'success');
+
+        // Update the creator result with livestream details
+        const match = activeResults.find(r => r.id === creatorId);
         if (match) {
-          match._products = products;
-          match._productNames = products.map(p => p.title || p.name || p.product_name || '').filter(Boolean);
-          match._productCount = products.length;
+          match._livestreams = livestreams;
+          match._livestreamCount = livestreams.length;
+          // Collect duration info
+          match._durations = livestreams.map(ls => ls.duration || ls.live_duration || '').filter(Boolean);
         }
-        log(`${ls.handle || ls.id}: ${products.length} products`, 'success');
+
+        // Step 2: Get products for each livestream
+        let allProducts = [];
+        for (let j = 0; j < Math.min(livestreams.length, 5); j++) {
+          const ls = livestreams[j];
+          const lsId = ls.id;
+          if (!lsId) continue;
+
+          await sleep(delay);
+          try {
+            const prodResponse = await sendMessageAsync({
+              type: 'ACTIVE_FETCH_PRODUCTS',
+              livestreamId: lsId,
+              startDate,
+              endDate
+            });
+
+            if (prodResponse && prodResponse.success) {
+              const products = Array.isArray(prodResponse.data) ? prodResponse.data : (prodResponse.data?.list || []);
+              allProducts = allProducts.concat(products);
+              log(`  ${handle} livestream ${j+1}: ${products.length} products`, 'success');
+            } else {
+              log(`  ${handle} livestream ${j+1}: ${prodResponse?.error || 'no products'}`, 'error');
+            }
+          } catch(e) {
+            log(`  ${handle} livestream ${j+1}: ${e.message}`, 'error');
+          }
+        }
+
+        // Dedupe products by name/title
+        const seen = new Set();
+        const uniqueProducts = [];
+        allProducts.forEach(p => {
+          const name = p.title || p.name || p.product_name || '';
+          if (name && !seen.has(name)) {
+            seen.add(name);
+            uniqueProducts.push(p);
+          }
+        });
+
+        if (match) {
+          match._products = uniqueProducts;
+          match._productNames = uniqueProducts.map(p => p.title || p.name || p.product_name || '').filter(Boolean);
+          match._productCount = uniqueProducts.length;
+        }
+        log(`${handle}: ${uniqueProducts.length} unique products total`, 'success');
       } else {
-        log(`${ls.handle || ls.id}: ${response?.error || 'products failed — no response'}`, 'error');
+        log(`${handle}: ${lsResponse?.error || 'livestream fetch failed'}`, 'error');
       }
     } catch (e) {
-      log(`${ls.handle || ls.id}: ${e.message}`, 'error');
+      log(`${handle}: ${e.message}`, 'error');
     }
 
-    if (i < items.length - 1) await sleep(delay);
+    if (i < creators.length - 1) await sleep(delay);
   }
 
   document.getElementById('progressFill').style.width = '100%';
