@@ -160,35 +160,54 @@ function loadActiveFromStorage() {
 }
 
 async function grabFromPage() {
-  setStatus('Reading creators from Kalodata page...');
+  setStatus('Reading creators from captured data...');
   showLog();
-  log('Scanning page for creators...');
+  log('Looking for creator data in passive captures...');
 
-  chrome.runtime.sendMessage({ type: 'GRAB_PAGE_CREATORS' }, (response) => {
-    if (!response || !response.success) {
-      log('Failed: ' + (response?.error || 'Could not read page'), 'error');
-      setStatus('Failed');
+  // The passive interceptor already captured the queryList response when the page loaded
+  chrome.storage.local.get(['captures'], function(result) {
+    const captures = result.captures || [];
+
+    // Find the most recent queryList capture that has creator data
+    let creatorData = null;
+    for (let i = captures.length - 1; i >= 0; i--) {
+      const c = captures[i];
+      if (c.endpoint === 'queryList' && Array.isArray(c.data) && c.data.length > 0) {
+        // Check if this looks like creator data (has handle or nickname field)
+        const first = c.data[0];
+        if (first.handle || first.nickname || first.username) {
+          creatorData = c.data;
+          log(`Found creator data from ${c.timestamp} (${c.data.length} items)`, 'success');
+          break;
+        }
+      }
+    }
+
+    if (!creatorData) {
+      log('No creator data found. Browse to Kalodata Creator Rankings first, then try again.', 'error');
+      setStatus('Browse Kalodata first');
       return;
     }
 
-    const creators = response.data;
-    log(`Found ${creators.length} creators on page`, 'success');
-
-    // Populate the textarea
-    const ids = creators.map(c => c.name ? `${c.id} # ${c.name}` : c.id);
+    // Populate creator IDs
+    const ids = creatorData.map(c => {
+      const id = c.id || c.uid;
+      const name = c.handle || c.nickname || c.username || '';
+      return name ? `${id} # ${name}` : id;
+    });
     document.getElementById('creatorIds').value = ids.join('\n');
 
-    // Set as active results with basic info
-    activeResults = creators.map(c => ({
-      id: c.id,
-      handle: c.name,
-      _creatorId: c.id,
-      _creatorName: c.name,
+    // Set as active results with the full data we already have
+    activeResults = creatorData.map(item => ({
+      ...item,
+      _creatorId: item.id || item.uid,
+      _creatorName: item.handle || item.nickname || item.username || '',
       _products: [],
       _fetchedAt: new Date().toISOString()
     }));
     renderActiveResults();
-    setStatus(`Loaded ${creators.length} creators — click "Fetch Livestream Data" to get details`);
+    setStatus(`Loaded ${creatorData.length} creators — click "Fetch Livestream Data" to get livestreams + products`);
+    chrome.storage.local.set({ activeResults });
   });
 }
 
