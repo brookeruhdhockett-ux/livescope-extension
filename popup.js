@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   loadData();
+  loadActiveFromStorage();
   setupTabs();
   setupDates();
 
@@ -147,6 +148,15 @@ function extractCreatorFromUrl(url) {
 
 // ===== ACTIVE MODE =====
 let activeResults = [];
+
+function loadActiveFromStorage() {
+  chrome.storage.local.get(['activeResults'], function(result) {
+    if (result.activeResults && result.activeResults.length > 0) {
+      activeResults = result.activeResults;
+      renderActiveResults();
+    }
+  });
+}
 
 async function fetchTopCreators() {
   const startDate = document.getElementById('startDate').value;
