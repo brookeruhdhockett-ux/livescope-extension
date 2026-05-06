@@ -178,14 +178,24 @@ async function fetchTopCreators() {
       return;
     }
 
+    // Log the structure so we can see what fields are available
+    log('First item keys: ' + Object.keys(items[0]).join(', '));
+    log('Sample: ' + JSON.stringify(items[0]).substring(0, 400));
+
     // Rankings returns livestreams — extract the CREATOR id, not livestream id
     const seen = new Set();
     const ids = [];
     items.forEach(item => {
-      // Try every possible creator ID field
-      const creatorId = item.creator_id || item.creatorId || item.user_id || item.userId || item.seller_id || item.sellerId;
-      const name = item.creator_name || item.username || item.nickname || item.seller_name || '';
-      const id = creatorId || item.id; // fallback to item.id only if no creator field
+      // Try every possible creator ID field (including nested)
+      const creatorId = item.creator_id || item.creatorId || item.user_id || item.userId
+        || item.seller_id || item.sellerId || item.anchor_id || item.anchorId
+        || (item.creator && item.creator.id) || (item.anchor && item.anchor.id)
+        || (item.user && item.user.id);
+      const name = item.creator_name || item.creatorName || item.username || item.nickname
+        || item.seller_name || item.anchor_name || item.anchorName
+        || (item.creator && item.creator.name) || (item.anchor && item.anchor.name)
+        || (item.user && item.user.name) || '';
+      const id = creatorId || item.id;
       if (id && !seen.has(id)) {
         seen.add(id);
         ids.push(name ? `${id} # ${name}` : id);
@@ -193,9 +203,7 @@ async function fetchTopCreators() {
     });
 
     if (ids.length === 0) {
-      // Dump first item keys so we can see the structure
-      log('Could not find creator IDs. First item keys: ' + Object.keys(items[0]).join(', '), 'error');
-      log('First item sample: ' + JSON.stringify(items[0]).substring(0, 300));
+      log('Could not find creator IDs in response', 'error');
       return;
     }
 
