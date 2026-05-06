@@ -13,6 +13,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runInKaloTab(buildProductFetchCode(msg)).then(sendResponse);
     return true;
   }
+  if (msg.type === 'GRAB_PAGE_CREATORS') {
+    grabCreatorsFromPage().then(sendResponse);
+    return true;
+  }
   if (msg.type === 'ACTIVE_FETCH_CREATOR_LIVESTREAMS') {
     runInKaloTab({ action: 'fetch_creator_livestreams', creatorId: msg.creatorId, startDate: msg.startDate, endDate: msg.endDate }).then(sendResponse);
     return true;
@@ -39,6 +43,91 @@ async function runInKaloTab(code) {
     }
     return { success: false, error: 'No result from tab' };
   } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+async function grabCreatorsFromPage() {
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://www.kalodata.com/*' });
+    if (tabs.length === 0) {
+      return { success: false, error: 'No Kalodata tab open.' };
+    }
+
+    const tabId = tabs[0].id;
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: scrapeCreatorsFromDOM
+    });
+
+    if (results && results[0] && results[0].result) {
+      return results[0].result;
+    }
+    return { success: false, error: 'Could not read page' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function scrapeCreatorsFromDOM() {
+  try {
+    const creators = [];
+
+    // Method 1: Look for links to creator detail pages
+    const links = document.querySelectorAll('a[href*="/creator/"]');
+    const seen = new Set();
+    links.forEach(link => {
+      const href = link.getAttribute('href') || '';
+      // Extract creator ID from URL like /creator/detail?id=123
+      const idMatch = href.match(/[?&]id=(\d+)/);
+      if (idMatch && !seen.has(idMatch[1])) {
+        seen.add(idMatch[1]);
+        // Try to get the handle/name from nearby text
+        const row = link.closest('tr, [class*="row"], [class*="item"], [class*="card"]');
+        const nameEl = row ? (row.querySelector('[class*="name"], [class*="handle"], [class*="nickname"]') || link) : link;
+        const name = nameEl.textContent.trim().replace('@', '');
+        creators.push({ id: idMatch[1], name });
+      }
+    });
+
+    // Method 2: Look for table rows with creator data
+    if (creators.length === 0) {
+      const rows = document.querySelectorAll('table tbody tr, [class*="table"] [class*="row"]');
+      rows.forEach(row => {
+        const link = row.querySelector('a[href*="creator"]');
+        const cells = row.querySelectorAll('td, [class*="cell"]');
+        if (link) {
+          const href = link.getAttribute('href') || '';
+          const idMatch = href.match(/[?&]id=(\d+)/);
+          if (idMatch && !seen.has(idMatch[1])) {
+            seen.add(idMatch[1]);
+            creators.push({ id: idMatch[1], name: link.textContent.trim() });
+          }
+        }
+      });
+    }
+
+    // Method 3: Check for any element with creator IDs in data attributes
+    if (creators.length === 0) {
+      const allLinks = document.querySelectorAll('a[href]');
+      allLinks.forEach(link => {
+        const href = link.getAttribute('href') || '';
+        const idMatch = href.match(/id=(\d{15,})/);
+        if (idMatch && !seen.has(idMatch[1])) {
+          seen.add(idMatch[1]);
+          creators.push({ id: idMatch[1], name: link.textContent.trim().substring(0, 50) });
+        }
+      });
+    }
+
+    if (creators.length === 0) {
+      // Dump page info for debugging
+      const allHrefs = Array.from(document.querySelectorAll('a[href]')).slice(0, 10).map(a => a.href);
+      return { success: false, error: 'No creators found on page. Sample links: ' + allHrefs.join(', ').substring(0, 200) };
+    }
+
+    return { success: true, data: creators };
+  } catch(e) {
     return { success: false, error: e.message };
   }
 }

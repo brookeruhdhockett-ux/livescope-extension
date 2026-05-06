@@ -13,6 +13,7 @@ function init() {
 
   document.getElementById('startFetch').addEventListener('click', startActiveFetch);
   document.getElementById('fetchTopCreators').addEventListener('click', fetchTopCreators);
+  document.getElementById('grabFromPage').addEventListener('click', grabFromPage);
   document.getElementById('exportActiveCSV').addEventListener('click', exportActiveCSV);
   document.getElementById('exportActiveJSON').addEventListener('click', exportActiveJSON);
   document.getElementById('sendActiveToLiveScope').addEventListener('click', sendActiveToLiveScope);
@@ -155,6 +156,39 @@ function loadActiveFromStorage() {
       activeResults = result.activeResults;
       renderActiveResults();
     }
+  });
+}
+
+async function grabFromPage() {
+  setStatus('Reading creators from Kalodata page...');
+  showLog();
+  log('Scanning page for creators...');
+
+  chrome.runtime.sendMessage({ type: 'GRAB_PAGE_CREATORS' }, (response) => {
+    if (!response || !response.success) {
+      log('Failed: ' + (response?.error || 'Could not read page'), 'error');
+      setStatus('Failed');
+      return;
+    }
+
+    const creators = response.data;
+    log(`Found ${creators.length} creators on page`, 'success');
+
+    // Populate the textarea
+    const ids = creators.map(c => c.name ? `${c.id} # ${c.name}` : c.id);
+    document.getElementById('creatorIds').value = ids.join('\n');
+
+    // Set as active results with basic info
+    activeResults = creators.map(c => ({
+      id: c.id,
+      handle: c.name,
+      _creatorId: c.id,
+      _creatorName: c.name,
+      _products: [],
+      _fetchedAt: new Date().toISOString()
+    }));
+    renderActiveResults();
+    setStatus(`Loaded ${creators.length} creators — click "Fetch Livestream Data" to get details`);
   });
 }
 
