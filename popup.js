@@ -241,7 +241,7 @@ async function fetchProductsForAll(items) {
         }
         log(`${ls.handle || ls.id}: ${products.length} products`, 'success');
       } else {
-        log(`${ls.handle || ls.id}: products ${response?.error || 'failed'}`, 'error');
+        log(`${ls.handle || ls.id}: ${response?.error || 'products failed — no response'}`, 'error');
       }
     } catch (e) {
       log(`${ls.handle || ls.id}: ${e.message}`, 'error');
