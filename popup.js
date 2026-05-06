@@ -174,16 +174,30 @@ async function fetchTopCreators() {
     const items = Array.isArray(response.data) ? response.data : (response.data?.list || []);
     if (items.length === 0) {
       log('No creators returned. Check your Kalodata session.', 'error');
+      log('Raw response: ' + JSON.stringify(response.data).substring(0, 200));
       return;
     }
 
-    // Extract creator IDs and populate the textarea
-    const ids = items.map(item => {
-      const id = item.id || item.creator_id || item.userId;
-      const name = item.username || item.creator_name || item.nickname || '';
-      if (name) return `${id} # ${name}`;
-      return id;
-    }).filter(Boolean);
+    // Rankings returns livestreams — extract the CREATOR id, not livestream id
+    const seen = new Set();
+    const ids = [];
+    items.forEach(item => {
+      // Try every possible creator ID field
+      const creatorId = item.creator_id || item.creatorId || item.user_id || item.userId || item.seller_id || item.sellerId;
+      const name = item.creator_name || item.username || item.nickname || item.seller_name || '';
+      const id = creatorId || item.id; // fallback to item.id only if no creator field
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        ids.push(name ? `${id} # ${name}` : id);
+      }
+    });
+
+    if (ids.length === 0) {
+      // Dump first item keys so we can see the structure
+      log('Could not find creator IDs. First item keys: ' + Object.keys(items[0]).join(', '), 'error');
+      log('First item sample: ' + JSON.stringify(items[0]).substring(0, 300));
+      return;
+    }
 
     document.getElementById('creatorIds').value = ids.join('\n');
     log(`Found ${ids.length} creators`, 'success');
@@ -246,7 +260,8 @@ async function startActiveFetch() {
         });
         log(`${creator.name}: ${items.length} results (${response.endpoint})`, 'success');
       } else {
-        log(`${creator.name}: ${response?.error || 'failed'}`, 'error');
+        const err = response?.error || 'no data';
+        log(`${creator.name}: ${err}`, 'error');
       }
     } catch (e) {
       log(`${creator.name}: ${e.message}`, 'error');
