@@ -80,92 +80,96 @@ function processAndRender(captures) {
   const livestreams = [];
   const products = [];
 
-  // Track which creator we're looking at based on page URL
-  let lastCreatorId = '';
-  let lastCreatorName = '';
+  // Build ID-to-handle lookup from creator rankings first
+  const idToHandle = new Map();
 
+  // PASS 1: Extract all creators from rankings captures
   captures.forEach(c => {
     if (!c.data) return;
-
-    // Extract creator context from page URL
-    const pageCreatorId = extractCreatorIdFromUrl(c.pageUrl);
-    if (pageCreatorId) {
-      lastCreatorId = pageCreatorId;
-    }
-
     const type = c.captureType || 'unknown';
-    const items = Array.isArray(c.data) ? c.data : (c.data.records || c.data.list || [c.data]);
+    if (type !== 'creator_rankings') return;
 
-    // Handle pagination wrapper: {records: [...], total: N}
-    let itemList = items;
-    if (!Array.isArray(items) && items.records) {
-      itemList = items.records;
-    } else if (!Array.isArray(items) && items.list) {
-      itemList = items.list;
-    }
-    if (!Array.isArray(itemList)) itemList = [itemList];
+    const itemList = unwrapData(c.data);
+    itemList.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const handle = item.handle || item.nickname || item.username || '';
+      if (!handle) return;
+
+      const id = String(item.uid || item.id || '');
+      creators.set(handle, {
+        handle,
+        nickname: item.nickname || item.handle || '',
+        revenue: item.revenue,
+        sale: item.sale,
+        followers: item.followers,
+        id: id,
+        livestreams: [],
+        products: [],
+        durations: []
+      });
+      if (id) idToHandle.set(id, handle);
+    });
+  });
+
+  // PASS 2: Process livestreams, products, and everything else
+  captures.forEach(c => {
+    if (!c.data) return;
+    const type = c.captureType || 'unknown';
+    if (type === 'creator_rankings') return; // Already processed
+
+    // Figure out which creator this capture belongs to
+    const pageCreatorId = extractCreatorIdFromUrl(c.pageUrl);
+    const creatorHandle = idToHandle.get(pageCreatorId) || '';
+
+    // Also check the request params for creator ID
+    const paramId = c.params ? String(c.params.id || '') : '';
+    const creatorFromParams = idToHandle.get(paramId) || '';
+    const bestCreator = creatorHandle || creatorFromParams;
+
+    const itemList = unwrapData(c.data);
 
     itemList.forEach(item => {
       if (!item || typeof item !== 'object') return;
 
-      // CREATOR RANKINGS — from /creator/queryList
-      if (type === 'creator_rankings') {
-        const handle = item.handle || item.nickname || item.username || '';
-        if (handle) {
-          creators.set(handle, {
-            handle,
-            nickname: item.nickname || item.handle || '',
-            revenue: formatNum(item.revenue),
-            sale: formatNum(item.sale),
-            followers: formatNum(item.followers),
-            id: item.uid || item.id || '',
-            livestreams: [],
-            products: [],
-            durations: []
-          });
-        }
-      }
-
-      // CREATOR LIVESTREAMS — from /creator/detail/video/queryList
-      if (type === 'creator_livestreams' || type === 'creator_detail') {
-        const creatorName = findCreatorByPageId(pageCreatorId, creators) || lastCreatorName || '';
+      // LIVESTREAMS — from creator detail pages
+      if (type === 'creator_livestreams' || type === 'creator_detail' ||
+          (item.duration || item.liveDuration || item.live_duration || item.gpm)) {
         const ls = {
           id: item.id || item.videoId || '',
           title: item.title || item.description || '',
-          duration: formatDuration(item.duration || item.live_duration || item.liveDuration || ''),
-          revenue: formatNum(item.revenue),
-          gpm: formatNum(item.gpm),
-          sale: formatNum(item.sale),
-          views: formatNum(item.views || item.viewCount || item.view_count),
-          creator: creatorName,
+          duration: item.duration || item.live_duration || item.liveDuration || 0,
+          revenue: item.revenue || 0,
+          gpm: item.gpm || 0,
+          sale: item.sale || 0,
+          views: item.views || item.viewCount || item.view_count || 0,
+          creator: bestCreator,
           date: item.date || item.createTime || item.liveTime || ''
         };
         livestreams.push(ls);
 
-        if (creatorName && creators.has(creatorName)) {
-          const cr = creators.get(creatorName);
+        if (bestCreator && creators.has(bestCreator)) {
+          const cr = creators.get(bestCreator);
           cr.livestreams.push(ls);
           if (ls.duration) cr.durations.push(ls.duration);
         }
       }
 
-      // PRODUCTS — from /video/detail/stat/queryProductList
-      if (type === 'products') {
+      // PRODUCTS — from product list endpoints
+      if (type === 'products' || item.productName || item.product_name ||
+          (item.title && (item.price || item.unitPrice || item.unit_price))) {
         const prod = {
           title: item.title || item.productName || item.product_name || item.name || '',
-          price: formatPrice(item.price || item.unitPrice || item.unit_price || ''),
-          revenue: formatNum(item.revenue),
-          sale: formatNum(item.sale || item.saleCount || item.sale_count),
+          price: item.price || item.unitPrice || item.unit_price || 0,
+          revenue: item.revenue || 0,
+          sale: item.sale || item.saleCount || item.sale_count || 0,
           id: item.id || item.productId || item.product_id || '',
-          image: item.image || item.coverUrl || item.cover_url || ''
+          image: item.image || item.coverUrl || item.cover_url || '',
+          creator: bestCreator
         };
         if (prod.title) {
           products.push(prod);
-
-          // Try to attach to a creator via the livestream page context
-          const creatorName = findCreatorByPageId(pageCreatorId, creators);
-          if (creatorName && creators.has(creatorName)) {
-            const cr = creators.get(creatorName);
+          if (bestCreator && creators.has(bestCreator)) {
+            const cr = creators.get(bestCreator);
             if (!cr.products.find(p => p.title === prod.title)) {
               cr.products.push(prod);
             }
@@ -173,33 +177,17 @@ function processAndRender(captures) {
         }
       }
 
-      // GENERIC FALLBACK — try to identify data by its shape
+      // GENERIC FALLBACK for unknown types — try to identify by shape
       if (type === 'unknown' || type === 'video_detail') {
-        // Creator-like
-        if ((item.handle || item.nickname) && !item.duration && !item.productName) {
+        if ((item.handle || item.nickname) && !creators.has(item.handle || item.nickname)) {
           const handle = item.handle || item.nickname || '';
-          if (handle && !creators.has(handle)) {
-            creators.set(handle, {
-              handle, nickname: item.nickname || '', revenue: formatNum(item.revenue),
-              sale: formatNum(item.sale), followers: formatNum(item.followers),
-              id: item.uid || item.id || '', livestreams: [], products: [], durations: []
-            });
-          }
-        }
-        // Livestream-like
-        if (item.duration || item.liveDuration || item.gpm) {
-          const creatorName = item.handle || findCreatorByPageId(pageCreatorId, creators) || '';
-          livestreams.push({
-            id: item.id || '', title: item.title || '', duration: formatDuration(item.duration || item.liveDuration || ''),
-            revenue: formatNum(item.revenue), gpm: formatNum(item.gpm), sale: formatNum(item.sale),
-            views: formatNum(item.views), creator: creatorName, date: item.date || ''
+          const id = String(item.uid || item.id || '');
+          creators.set(handle, {
+            handle, nickname: item.nickname || '', revenue: item.revenue,
+            sale: item.sale, followers: item.followers,
+            id: id, livestreams: [], products: [], durations: []
           });
-        }
-        // Product-like
-        if (item.title && (item.price || item.unitPrice || item.productId)) {
-          const prod = { title: item.title || '', price: formatPrice(item.price || item.unitPrice || ''),
-            revenue: formatNum(item.revenue), sale: formatNum(item.sale), id: item.id || item.productId || '' };
-          products.push(prod);
+          if (id) idToHandle.set(id, handle);
         }
       }
     });
@@ -213,32 +201,43 @@ function processAndRender(captures) {
   const tbody = document.getElementById('resultsBody');
   const rows = [];
 
-  // Show creator rows with their livestream/product counts
+  // Show creator rows
   creators.forEach((cr, handle) => {
     const lsCount = cr.livestreams.length;
+    const prodCount = cr.products.length;
     const prodNames = cr.products.map(p => p.title).slice(0, 3).join(', ');
-    const prodDisplay = prodNames || (cr.products.length > 0 ? cr.products.length + ' products' : '—');
-    const durDisplay = cr.durations.length > 0 ? cr.durations[0] : '—';
+    const prodDisplay = prodNames || (prodCount > 0 ? prodCount + ' products' : '—');
+
+    // Best duration: average or first
+    let durDisplay = '—';
+    if (cr.durations.length > 0) {
+      const totalSec = cr.durations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0);
+      durDisplay = fmtDuration(Math.round(totalSec / cr.durations.length));
+    }
+
     rows.push(`<tr>
-      <td>${esc(handle)}${lsCount > 0 ? ' <small style="color:#4ecdc4">(' + lsCount + ' streams)</small>' : ''}</td>
-      <td>${esc(cr.revenue) || '—'}</td>
-      <td>${esc(durDisplay)}</td>
+      <td>${esc(handle)}${lsCount > 0 ? ' <small style="color:#4ecdc4">(' + lsCount + ')</small>' : ''}</td>
+      <td>${fmtRevenue(cr.revenue)}</td>
+      <td>${durDisplay}</td>
       <td class="products" title="${esc(cr.products.map(p => p.title).join(', '))}">${esc(prodDisplay)}</td>
     </tr>`);
   });
 
-  // Show standalone livestreams not attached to creators
-  const orphanStreams = livestreams.filter(ls => !ls.creator || !creators.has(ls.creator));
-  orphanStreams.forEach(ls => {
-    rows.push(`<tr>
-      <td>${esc(ls.creator) || '—'}</td>
-      <td>${esc(ls.revenue) || '—'}</td>
-      <td>${esc(ls.duration) || '—'}</td>
-      <td class="products">—</td>
-    </tr>`);
-  });
+  // Show unmatched livestreams grouped
+  const orphans = livestreams.filter(ls => !ls.creator || !creators.has(ls.creator));
+  if (orphans.length > 0) {
+    rows.push(`<tr><td colspan="4" style="color:#777;font-size:10px;padding:6px 8px;border-bottom:1px solid #333">${orphans.length} unmatched livestreams</td></tr>`);
+    orphans.slice(0, 10).forEach(ls => {
+      rows.push(`<tr style="color:#888">
+        <td>${esc(ls.title).substring(0, 30) || '—'}</td>
+        <td>${fmtRevenue(ls.revenue)}</td>
+        <td>${fmtDuration(ls.duration)}</td>
+        <td class="products">—</td>
+      </tr>`);
+    });
+  }
 
-  tbody.innerHTML = rows.length > 0 ? rows.join('') : '<tr><td colspan="4" style="text-align:center;color:#777;padding:20px">No data captured yet. Browse Kalodata creator pages while recording.</td></tr>';
+  tbody.innerHTML = rows.length > 0 ? rows.join('') : '<tr><td colspan="4" style="text-align:center;color:#777;padding:20px">No data yet. Browse Kalodata while recording.</td></tr>';
 
   // Store processed data for export
   chrome.storage.local.set({
@@ -248,44 +247,58 @@ function processAndRender(captures) {
   });
 }
 
+// Unwrap Kalodata's response wrappers: {records:[...]}, {list:[...]}, or bare array/object
+function unwrapData(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    if (Array.isArray(data.records)) return data.records;
+    if (Array.isArray(data.list)) return data.list;
+    return [data];
+  }
+  return [];
+}
+
 function extractCreatorIdFromUrl(url) {
   if (!url) return '';
   const match = url.match(/[?&]id=(\d+)/);
   return match ? match[1] : '';
 }
 
-function findCreatorByPageId(id, creators) {
-  if (!id) return '';
-  for (const [handle, cr] of creators) {
-    if (cr.id === id) return handle;
+function fmtRevenue(val) {
+  if (!val && val !== 0) return '—';
+  const n = typeof val === 'string' ? parseFloat(val.replace(/[$,]/g, '')) : val;
+  if (isNaN(n)) return String(val);
+  if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
+  if (n > 0) return '$' + n.toFixed(0);
+  return '—';
+}
+
+function fmtDuration(val) {
+  if (!val) return '—';
+  if (typeof val === 'string') {
+    // Already formatted like "11h 24m"
+    if (val.includes('h') || val.includes('m')) return val;
+    val = parseInt(val, 10);
+    if (isNaN(val)) return '—';
   }
-  return '';
-}
-
-function formatNum(val) {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
-  if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
-  return String(val);
-}
-
-function formatDuration(val) {
-  if (!val) return '';
-  if (typeof val === 'string') return val;
-  // If it's seconds, convert
-  if (typeof val === 'number' && val > 60) {
+  if (typeof val === 'number' && val > 0) {
     const h = Math.floor(val / 3600);
     const m = Math.floor((val % 3600) / 60);
-    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return val + 's';
   }
-  return String(val);
+  return '—';
 }
 
-function formatPrice(val) {
+function fmtNum(val) {
   if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  return '$' + Number(val).toFixed(2);
+  const n = typeof val === 'string' ? parseFloat(val) : val;
+  if (isNaN(n)) return String(val);
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(Math.round(n));
 }
 
 function esc(str) {
