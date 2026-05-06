@@ -188,16 +188,16 @@ async function fetchTopCreators() {
       return;
     }
 
-    // Rankings data already contains livestream info: duration, revenue, gpm, sale, handle
-    // Use it directly as results AND extract creator UIDs for optional deeper fetch
-    log(`Got ${items.length} livestreams from rankings`);
+    // Log first item structure for debugging
+    log(`Got ${items.length} creators from rankings`);
+    log('Fields: ' + Object.keys(items[0]).join(', '));
 
-    // Populate creator IDs using uid + handle
+    // Populate creator IDs
     const seen = new Set();
     const ids = [];
     items.forEach(item => {
-      const creatorId = item.uid || item.id;
-      const name = item.handle || '';
+      const creatorId = item.uid || item.id || item.creator_id;
+      const name = item.handle || item.username || item.nickname || '';
       if (creatorId && !seen.has(creatorId)) {
         seen.add(creatorId);
         ids.push(name ? `${creatorId} # ${name}` : creatorId);
@@ -207,11 +207,11 @@ async function fetchTopCreators() {
     document.getElementById('creatorIds').value = ids.join('\n');
     log(`Found ${ids.length} unique creators`, 'success');
 
-    // Load rankings as base results, then fetch products for each livestream
+    // Load creator data as results, then fetch products per creator
     activeResults = items.map(item => ({
       ...item,
-      _creatorId: item.uid || item.id,
-      _creatorName: item.handle || '',
+      _creatorId: item.uid || item.id || item.creator_id,
+      _creatorName: item.handle || item.username || item.nickname || '',
       _products: [],
       _fetchedAt: new Date().toISOString()
     }));

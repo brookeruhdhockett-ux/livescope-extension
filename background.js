@@ -168,19 +168,21 @@ async function executeFetch(params) {
       return { success: !!data.success, data: data.data, livestreamId: params.livestreamId };
 
     } else if (params.action === 'fetch_rankings') {
-      const resp = await fetch('https://www.kalodata.com/livestream/queryList', {
+      const resp = await fetch('https://www.kalodata.com/creator/queryList', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          country: 'US',
           startDate: params.startDate,
           endDate: params.endDate,
-          catoids: [],
+          cateIds: [],
+          showCateIds: [],
+          'creator.filter.content_type': 'LIVE',
+          'creator.filter.creator_type': 'INDEPENDENT',
           pageNo: params.pageNo,
           pageSize: params.pageSize,
-          sort: { filter: 'revenue', type: 'DESC' },
-          country: 'US',
-          authority: true
+          sort: [{ field: 'revenue', type: 'DESC' }]
         })
       });
       const text = await resp.text();
