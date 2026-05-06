@@ -1,305 +1,281 @@
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
-  setupDates();
-  loadActiveFromStorage();
-
-  document.getElementById('grabFromPage').addEventListener('click', grabFromPage);
-  document.getElementById('startFetch').addEventListener('click', startActiveFetch);
-  document.getElementById('exportActiveCSV').addEventListener('click', exportActiveCSV);
-  document.getElementById('exportActiveJSON').addEventListener('click', exportActiveJSON);
-  document.getElementById('sendActiveToLiveScope').addEventListener('click', sendActiveToLiveScope);
+  document.getElementById('recordBtn').addEventListener('click', startRecording);
+  document.getElementById('stopBtn').addEventListener('click', stopRecording);
+  document.getElementById('recordMoreBtn').addEventListener('click', startRecording);
+  document.getElementById('exportCSV').addEventListener('click', exportCSV);
+  document.getElementById('exportJSON').addEventListener('click', exportJSON);
+  document.getElementById('sendToLiveScope').addEventListener('click', sendToLiveScope);
   document.getElementById('clearBtn').addEventListener('click', clearData);
-}
 
-function setupDates() {
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  document.getElementById('startDate').value = weekAgo;
-  document.getElementById('endDate').value = today;
-}
-
-// ===== RESULTS STATE =====
-let activeResults = [];
-
-function loadActiveFromStorage() {
-  chrome.storage.local.get(['activeResults'], function(result) {
-    if (result.activeResults && result.activeResults.length > 0) {
-      activeResults = result.activeResults;
-      renderActiveResults();
+  // Check if we're currently recording
+  chrome.storage.local.get(['recording', 'captures'], function(result) {
+    if (result.recording) {
+      showRecordingView();
+      updateCaptureCount(result.captures || []);
+    } else if (result.captures && result.captures.length > 0) {
+      showResultsView(result.captures);
     }
   });
 }
 
-// ===== GRAB FROM PAGE =====
-function grabFromPage() {
-  setStatus('Reading creators from captured data...');
-  showLog();
-  log('Looking for creator data in passive captures...');
+// ===== RECORDING =====
+function startRecording() {
+  chrome.storage.local.set({ recording: true }, function() {
+    showRecordingView();
+    feedLog('Recording started — browse Kalodata now', 'success');
+  });
+}
 
-  chrome.storage.local.get(['captures'], function(result) {
-    const captures = result.captures || [];
-
-    let creatorData = null;
-    for (let i = captures.length - 1; i >= 0; i--) {
-      const c = captures[i];
-      if (c.endpoint === 'queryList' && Array.isArray(c.data) && c.data.length > 0) {
-        const first = c.data[0];
-        if (first.handle || first.nickname || first.username) {
-          creatorData = c.data;
-          log(`Found creator data from ${c.timestamp} (${c.data.length} creators)`, 'success');
-          break;
-        }
-      }
-    }
-
-    if (!creatorData) {
-      log('No creator data found. Browse to Kalodata Creator Rankings first, then try again.', 'error');
-      setStatus('Browse Kalodata first');
-      return;
-    }
-
-    const ids = creatorData.map(c => {
-      const id = c.id || c.uid;
-      const name = c.handle || c.nickname || c.username || '';
-      return name ? `${id} # ${name}` : id;
+function stopRecording() {
+  chrome.storage.local.set({ recording: false }, function() {
+    chrome.storage.local.get(['captures'], function(result) {
+      const captures = result.captures || [];
+      showResultsView(captures);
     });
-    document.getElementById('creatorIds').value = ids.join('\n');
-
-    activeResults = creatorData.map(item => ({
-      ...item,
-      _creatorId: item.id || item.uid,
-      _creatorName: item.handle || item.nickname || item.username || '',
-      _products: [],
-      _fetchedAt: new Date().toISOString()
-    }));
-    renderActiveResults();
-    setStatus(`Loaded ${creatorData.length} creators — click "Fetch Livestreams + Products" for details`);
-    chrome.storage.local.set({ activeResults });
   });
 }
 
-// ===== FETCH LIVESTREAMS + PRODUCTS =====
-async function startActiveFetch() {
-  if (activeResults.length === 0) {
-    setStatus('Grab creators first');
-    return;
-  }
+function showRecordingView() {
+  document.getElementById('startView').style.display = 'none';
+  document.getElementById('recordingView').style.display = 'block';
+  document.getElementById('resultsView').style.display = 'none';
+  document.getElementById('recordingIndicator').classList.add('active');
 
-  const startDate = document.getElementById('startDate').value;
-  const endDate = document.getElementById('endDate').value;
-  const delay = parseInt(document.getElementById('fetchDelay').value) || 2000;
+  // Poll for new captures
+  pollCaptures();
+}
 
-  showLog();
-  document.getElementById('progressBar').style.display = 'block';
-  log(`Fetching livestreams + products for ${activeResults.length} creators...`);
+function showResultsView(captures) {
+  document.getElementById('startView').style.display = 'none';
+  document.getElementById('recordingView').style.display = 'none';
+  document.getElementById('resultsView').style.display = 'block';
+  document.getElementById('recordingIndicator').classList.remove('active');
 
-  for (let i = 0; i < activeResults.length; i++) {
-    const creator = activeResults[i];
-    const handle = creator._creatorName || creator.handle || creator.id;
-    const creatorId = creator._creatorId || creator.id;
-    const pct = Math.round(((i + 1) / activeResults.length) * 100);
-    document.getElementById('progressFill').style.width = pct + '%';
+  processAndRender(captures);
+}
 
-    // Step 1: Get this creator's livestreams
-    log(`${handle}: fetching livestreams...`);
-    try {
-      const lsResponse = await sendMessageAsync({
-        type: 'ACTIVE_FETCH_CREATOR_LIVESTREAMS',
-        creatorId,
-        startDate,
-        endDate
-      });
-
-      if (lsResponse && lsResponse.success) {
-        // Debug: log raw response structure for first creator
-        if (i === 0) {
-          log(`DEBUG response type: ${typeof lsResponse.data}, isArray: ${Array.isArray(lsResponse.data)}`);
-          if (lsResponse.data && typeof lsResponse.data === 'object') {
-            log(`DEBUG keys: ${Object.keys(lsResponse.data).join(', ')}`);
-            log(`DEBUG sample: ${JSON.stringify(lsResponse.data).substring(0, 300)}`);
-          }
-        }
-        const livestreams = Array.isArray(lsResponse.data) ? lsResponse.data : (lsResponse.data?.list || lsResponse.data?.data || []);
-        log(`${handle}: ${livestreams.length} livestreams`, livestreams.length > 0 ? 'success' : 'error');
-
-        creator._livestreams = livestreams;
-        creator._livestreamCount = livestreams.length;
-        creator._durations = livestreams.map(ls => ls.duration || ls.live_duration || '').filter(Boolean);
-
-        // Step 2: Get products for each livestream (up to 5)
-        let allProducts = [];
-        for (let j = 0; j < Math.min(livestreams.length, 5); j++) {
-          const ls = livestreams[j];
-          if (!ls.id) continue;
-
-          await sleep(delay);
-          try {
-            const prodResponse = await sendMessageAsync({
-              type: 'ACTIVE_FETCH_PRODUCTS',
-              livestreamId: ls.id,
-              startDate,
-              endDate
-            });
-
-            if (prodResponse && prodResponse.success) {
-              const products = Array.isArray(prodResponse.data) ? prodResponse.data : (prodResponse.data?.list || []);
-              allProducts = allProducts.concat(products);
-              log(`  ${handle} stream ${j+1}: ${products.length} products`, 'success');
-            } else {
-              log(`  ${handle} stream ${j+1}: ${prodResponse?.error || 'no products'}`, 'error');
-            }
-          } catch(e) {
-            log(`  ${handle} stream ${j+1}: ${e.message}`, 'error');
-          }
-        }
-
-        // Dedupe products
-        const seen = new Set();
-        const unique = [];
-        allProducts.forEach(p => {
-          const name = p.title || p.name || p.product_name || '';
-          if (name && !seen.has(name)) {
-            seen.add(name);
-            unique.push(p);
-          }
-        });
-
-        creator._products = unique;
-        creator._productNames = unique.map(p => p.title || p.name || p.product_name || '').filter(Boolean);
-        creator._productCount = unique.length;
-        log(`${handle}: ${unique.length} unique products`, 'success');
-      } else {
-        log(`${handle}: ${lsResponse?.error || 'livestream fetch failed'}`, 'error');
+let pollInterval;
+function pollCaptures() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(() => {
+    chrome.storage.local.get(['captures', 'recording'], function(result) {
+      if (!result.recording) {
+        clearInterval(pollInterval);
+        return;
       }
-    } catch (e) {
-      log(`${handle}: ${e.message}`, 'error');
-    }
-
-    if (i < activeResults.length - 1) await sleep(delay);
-  }
-
-  document.getElementById('progressFill').style.width = '100%';
-  renderActiveResults();
-  setStatus(`Done — ${activeResults.length} creators with livestreams + products`);
-  chrome.storage.local.set({ activeResults });
+      updateCaptureCount(result.captures || []);
+    });
+  }, 1000);
 }
 
-// ===== RENDER =====
-function renderActiveResults() {
-  if (activeResults.length === 0) return;
+function updateCaptureCount(captures) {
+  document.getElementById('captureCounter').textContent = captures.length;
+}
 
-  document.getElementById('activeResults').style.display = 'block';
+// ===== PROCESS CAPTURED DATA =====
+function processAndRender(captures) {
+  const creators = new Map(); // handle -> { revenue, livestreams, products }
+  const livestreams = [];
+  const products = [];
 
-  const creatorSet = new Set(activeResults.map(r => r._creatorId || r.id));
-  document.getElementById('activeCreatorCount').textContent = creatorSet.size;
+  captures.forEach(c => {
+    if (!c.data) return;
+    const items = Array.isArray(c.data) ? c.data : [c.data];
 
-  const totalLs = activeResults.reduce((sum, r) => sum + (r._livestreamCount || 0), 0);
-  document.getElementById('activeLsCount').textContent = totalLs;
+    items.forEach(item => {
+      // Creator data (from creator rankings or detail)
+      if (item.handle || item.nickname || item.username) {
+        const handle = item.handle || item.nickname || item.username;
+        if (!creators.has(handle)) {
+          creators.set(handle, {
+            handle,
+            nickname: item.nickname || item.handle || '',
+            revenue: item.revenue || '',
+            sale: item.sale || '',
+            followers: item.followers || '',
+            id: item.id || item.uid || '',
+            livestreams: [],
+            products: [],
+            durations: []
+          });
+        }
+        const existing = creators.get(handle);
+        // Update with richer data if available
+        if (item.revenue && !existing.revenue) existing.revenue = item.revenue;
+        if (item.followers && !existing.followers) existing.followers = item.followers;
+      }
 
-  let totalRev = 0;
-  activeResults.forEach(r => {
-    totalRev += parseRevenue(r.revenue || 0);
+      // Livestream/video data (has duration, gpm, views in a stream context)
+      if (item.duration || item.live_duration || item.gpm) {
+        const ls = {
+          id: item.id,
+          title: item.title || item.description || '',
+          duration: item.duration || item.live_duration || '',
+          revenue: item.revenue || '',
+          gpm: item.gpm || '',
+          sale: item.sale || '',
+          views: item.views || '',
+          creator: item.handle || item.creator_name || item.username || extractCreatorFromCapture(c) || ''
+        };
+        livestreams.push(ls);
+
+        // Attach to creator if we can match
+        if (ls.creator && creators.has(ls.creator)) {
+          const cr = creators.get(ls.creator);
+          cr.livestreams.push(ls);
+          if (ls.duration) cr.durations.push(ls.duration);
+        }
+      }
+
+      // Product data (has title + price or product-like fields)
+      if (item.title && (item.price || item.unit_price || item.product_id || item.product_name)) {
+        const prod = {
+          title: item.title || item.product_name || item.name || '',
+          price: item.price || item.unit_price || '',
+          revenue: item.revenue || '',
+          sale: item.sale || '',
+          id: item.id || item.product_id || ''
+        };
+        products.push(prod);
+      }
+    });
   });
-  document.getElementById('activeTotalRev').textContent = formatRevenue(totalRev);
 
-  const tbody = document.getElementById('activeResultsBody');
-  tbody.innerHTML = activeResults.slice(0, 100).map(r => {
-    const creator = r._creatorName || r.handle || '';
-    const revenue = r.revenue || '';
-    const items = r.sale || '';
-    const products = r._productNames && r._productNames.length > 0
-      ? r._productNames.slice(0, 3).join(', ') + (r._productNames.length > 3 ? ` +${r._productNames.length - 3} more` : '')
-      : (r._productCount ? r._productCount + ' products' : '—');
-    return `<tr>
-      <td>${creator}</td>
-      <td>${revenue}</td>
-      <td>${items}</td>
-      <td>${products}</td>
-    </tr>`;
-  }).join('');
-}
+  // Also try to match livestreams to creators by looking at capture page URLs
+  captures.forEach(c => {
+    const creator = extractCreatorFromCapture(c);
+    if (creator && creators.has(creator)) {
+      const cr = creators.get(creator);
+      const items = Array.isArray(c.data) ? c.data : [c.data];
+      items.forEach(item => {
+        // Products from creator detail pages
+        if (item.title && (item.price || item.unit_price || item.sale)) {
+          const name = item.title || item.product_name || '';
+          if (name && !cr.products.find(p => p.title === name)) {
+            cr.products.push({ title: name, price: item.price || item.unit_price || '', revenue: item.revenue || '' });
+          }
+        }
+      });
+    }
+  });
 
-function parseRevenue(val) {
-  if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    const cleaned = val.replace(/[$,]/g, '');
-    const num = parseFloat(cleaned);
-    if (cleaned.includes('K') || cleaned.includes('k')) return num * 1000;
-    if (cleaned.includes('M') || cleaned.includes('m')) return num * 1000000;
-    return isNaN(num) ? 0 : num;
+  // Render
+  document.getElementById('creatorCount').textContent = creators.size;
+  document.getElementById('livestreamCount').textContent = livestreams.length;
+  document.getElementById('productCount').textContent = products.length;
+
+  const tbody = document.getElementById('resultsBody');
+  const rows = [];
+
+  // If we have livestreams, show per-livestream rows
+  if (livestreams.length > 0) {
+    livestreams.forEach(ls => {
+      rows.push(`<tr>
+        <td>${ls.creator || '—'}</td>
+        <td>${ls.revenue || '—'}</td>
+        <td>${ls.duration || '—'}</td>
+        <td class="products">—</td>
+      </tr>`);
+    });
   }
-  return 0;
+
+  // Always show creator-level rows
+  creators.forEach((cr, handle) => {
+    const prodNames = cr.products.map(p => p.title).slice(0, 3).join(', ');
+    const prodDisplay = prodNames || (cr.products.length > 0 ? cr.products.length + ' products' : '—');
+    const durDisplay = cr.durations.length > 0 ? cr.durations[0] : '—';
+    rows.push(`<tr>
+      <td>${handle}</td>
+      <td>${cr.revenue || '—'}</td>
+      <td>${durDisplay}</td>
+      <td class="products" title="${cr.products.map(p => p.title).join(', ')}">${prodDisplay}</td>
+    </tr>`);
+  });
+
+  tbody.innerHTML = rows.join('');
+
+  // Store processed data for export
+  chrome.storage.local.set({
+    processedCreators: Array.from(creators.values()),
+    processedLivestreams: livestreams,
+    processedProducts: products
+  });
 }
 
-function formatRevenue(val) {
-  if (val >= 1000000) return '$' + (val / 1000000).toFixed(1) + 'M';
-  if (val >= 1000) return '$' + (val / 1000).toFixed(1) + 'K';
-  if (val > 0) return '$' + val.toFixed(0);
-  return '$0';
+function extractCreatorFromCapture(capture) {
+  if (!capture.pageUrl) return '';
+  const match = capture.pageUrl.match(/@([^/?&]+)/) || capture.pageUrl.match(/creator\/([^/?&]+)/);
+  return match ? match[1] : '';
 }
 
 // ===== EXPORTS =====
-function exportActiveCSV() {
-  ensureResults(() => {
-    const headers = new Set(['creator', 'creator_id', 'revenue', 'sale', 'followers', 'products', 'livestream_count', 'durations']);
-    const rows = activeResults.map(r => {
-      const row = {
-        creator: r._creatorName || r.handle || '',
-        creator_id: r._creatorId || r.id || '',
-        revenue: r.revenue || '',
-        sale: r.sale || '',
-        followers: r.followers || '',
-        products: (r._productNames || []).join('; '),
-        livestream_count: r._livestreamCount || 0,
-        durations: (r._durations || []).join('; ')
-      };
-      return row;
-    });
+function exportCSV() {
+  chrome.storage.local.get(['processedCreators', 'processedLivestreams'], function(result) {
+    const creators = result.processedCreators || [];
+    if (creators.length === 0) {
+      setStatus('No data to export');
+      return;
+    }
 
-    const headerArr = Array.from(headers);
+    const headers = ['creator', 'revenue', 'items_sold', 'followers', 'livestream_count', 'durations', 'products'];
     const csv = [
-      headerArr.join(','),
-      ...rows.map(r =>
-        headerArr.map(h => `"${String(r[h] || '').replace(/"/g, '""')}"`).join(',')
-      )
+      headers.join(','),
+      ...creators.map(cr => [
+        `"${cr.handle}"`,
+        `"${cr.revenue}"`,
+        `"${cr.sale}"`,
+        `"${cr.followers}"`,
+        `"${cr.livestreams.length}"`,
+        `"${cr.durations.join('; ')}"`,
+        `"${cr.products.map(p => p.title).join('; ').replace(/"/g, '""')}"`
+      ].join(','))
     ].join('\n');
 
     downloadFile(csv, `livescope-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
-    setStatus(`Exported ${rows.length} rows`);
+    setStatus(`Exported ${creators.length} creators`);
   });
 }
 
-function exportActiveJSON() {
-  ensureResults(() => {
-    const json = JSON.stringify(activeResults, null, 2);
+function exportJSON() {
+  chrome.storage.local.get(['processedCreators', 'processedLivestreams', 'processedProducts'], function(result) {
+    const json = JSON.stringify({
+      creators: result.processedCreators || [],
+      livestreams: result.processedLivestreams || [],
+      products: result.processedProducts || [],
+      exportedAt: new Date().toISOString()
+    }, null, 2);
     downloadFile(json, `livescope-${new Date().toISOString().slice(0,10)}.json`, 'application/json');
     setStatus('JSON exported');
   });
 }
 
-function sendActiveToLiveScope() {
-  ensureResults(() => {
-    const headers = ['creator', 'creator_id', 'revenue', 'sale', 'followers', 'products', 'livestream_count', 'durations'];
-    const rows = activeResults.map(r => ({
-      creator: r._creatorName || r.handle || '',
-      creator_id: r._creatorId || r.id || '',
-      revenue: r.revenue || '',
-      sale: r.sale || '',
-      followers: r.followers || '',
-      products: (r._productNames || []).join('; '),
-      livestream_count: r._livestreamCount || 0,
-      durations: (r._durations || []).join('; ')
-    }));
+function sendToLiveScope() {
+  chrome.storage.local.get(['processedCreators'], function(result) {
+    const creators = result.processedCreators || [];
+    if (creators.length === 0) {
+      setStatus('No data to send');
+      return;
+    }
 
-    const csvContent = [
+    const headers = ['creator', 'revenue', 'items_sold', 'followers', 'livestream_count', 'durations', 'products'];
+    const csv = [
       headers.join(','),
-      ...rows.map(r => headers.map(h => `"${String(r[h] || '').replace(/"/g, '""')}"`).join(','))
+      ...creators.map(cr => [
+        `"${cr.handle}"`,
+        `"${cr.revenue}"`,
+        `"${cr.sale}"`,
+        `"${cr.followers}"`,
+        `"${cr.livestreams.length}"`,
+        `"${cr.durations.join('; ')}"`,
+        `"${cr.products.map(p => p.title).join('; ').replace(/"/g, '""')}"`
+      ].join(','))
     ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv' });
     const form = new FormData();
-    form.append('file', blob, 'livescope-active.csv');
+    form.append('file', blob, 'livescope.csv');
 
     fetch('https://livescope-production.up.railway.app/api/upload', {
       method: 'POST',
@@ -318,26 +294,19 @@ function sendActiveToLiveScope() {
   });
 }
 
-function ensureResults(callback) {
-  if (activeResults.length > 0) {
-    callback();
-    return;
-  }
-  chrome.storage.local.get(['activeResults'], function(result) {
-    if (result.activeResults && result.activeResults.length > 0) {
-      activeResults = result.activeResults;
-      callback();
-    } else {
-      setStatus('No data to export');
-    }
-  });
-}
-
 function clearData() {
-  if (confirm('Clear all data?')) {
-    activeResults = [];
-    chrome.storage.local.set({ captures: [], activeResults: [] }, function() {
-      document.getElementById('activeResults').style.display = 'none';
+  if (confirm('Clear all captured data?')) {
+    chrome.storage.local.set({
+      captures: [],
+      recording: false,
+      processedCreators: [],
+      processedLivestreams: [],
+      processedProducts: []
+    }, function() {
+      document.getElementById('startView').style.display = 'block';
+      document.getElementById('recordingView').style.display = 'none';
+      document.getElementById('resultsView').style.display = 'none';
+      document.getElementById('recordingIndicator').classList.remove('active');
       setStatus('Cleared');
     });
   }
@@ -360,22 +329,8 @@ function setStatus(msg) {
   setTimeout(() => el.textContent = '', 5000);
 }
 
-function sendMessageAsync(msg) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, resolve);
-  });
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function showLog() {
-  document.getElementById('fetchLog').style.display = 'block';
-}
-
-function log(msg, type) {
-  const el = document.getElementById('fetchLog');
+function feedLog(msg, type) {
+  const el = document.getElementById('liveFeed');
   const line = document.createElement('div');
   if (type) line.className = type;
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;

@@ -19,7 +19,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   .stat-card {
     background: #141414;
@@ -30,8 +30,6 @@
   }
   .stat-num { font-size: 20px; font-weight: 700; color: #4ecdc4; }
   .stat-label { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.3px; }
-
-  .section { margin-bottom: 12px; }
 
   .btn {
     width: 100%;
@@ -53,6 +51,13 @@
     font-weight: 600;
   }
   .btn-primary:hover { opacity: 0.9; color: #000; }
+  .btn-record {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+    color: #fff;
+    border-color: #ff6b6b;
+    font-weight: 600;
+  }
+  .btn-record:hover { opacity: 0.9; color: #fff; }
   .btn-danger { border-color: #ff6b6b; color: #ff6b6b; }
 
   .btn-row { display: flex; gap: 8px; }
@@ -60,45 +65,44 @@
 
   .status { font-size: 11px; color: #777; text-align: center; margin-top: 4px; }
 
-  .form-group { margin-bottom: 12px; }
-  .form-label { font-size: 11px; color: #777; margin-bottom: 4px; display: block; }
-  .form-input, .form-textarea {
-    width: 100%;
-    padding: 8px 10px;
+  .recording-indicator {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #ff6b6b;
+  }
+  .recording-indicator.active { display: flex; }
+  .rec-dot {
+    width: 8px;
+    height: 8px;
+    background: #ff6b6b;
+    border-radius: 50%;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .results-wrap {
+    max-height: 280px;
+    overflow-y: auto;
     background: #141414;
     border: 1px solid #222;
-    border-radius: 6px;
-    color: #e0e0e0;
-    font-size: 12px;
-    font-family: inherit;
+    border-radius: 8px;
+    margin-bottom: 12px;
   }
-  .form-input:focus, .form-textarea:focus { border-color: #4ecdc4; outline: none; }
-  select.form-input { appearance: auto; }
-  .form-textarea { resize: vertical; min-height: 80px; }
-  .form-row { display: flex; gap: 8px; }
-  .form-row .form-group { flex: 1; }
-  .form-hint { font-size: 10px; color: #555; margin-top: 3px; }
-
-  .progress-bar {
-    height: 4px;
-    background: #222;
-    border-radius: 2px;
-    margin: 8px 0;
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    background: #4ecdc4;
-    border-radius: 2px;
-    transition: width 0.3s;
-    width: 0%;
-  }
-
   .results-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 11px;
-    margin-top: 8px;
   }
   .results-table th {
     text-align: left;
@@ -106,21 +110,23 @@
     border-bottom: 1px solid #333;
     color: #4ecdc4;
     font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: #141414;
   }
   .results-table td {
     padding: 5px 8px;
     border-bottom: 1px solid #1a1a1a;
   }
-  .results-wrap {
-    max-height: 250px;
-    overflow-y: auto;
-    background: #141414;
-    border: 1px solid #222;
-    border-radius: 8px;
+  .results-table td.products {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .fetch-log {
-    max-height: 120px;
+  .live-feed {
+    max-height: 80px;
     overflow-y: auto;
     background: #0d0d0d;
     border: 1px solid #1a1a1a;
@@ -128,87 +134,63 @@
     padding: 6px 8px;
     font-size: 10px;
     color: #555;
-    margin-top: 8px;
+    margin-bottom: 8px;
     font-family: 'SF Mono', monospace;
   }
-  .fetch-log .success { color: #51cf66; }
-  .fetch-log .error { color: #ff6b6b; }
+  .live-feed .success { color: #51cf66; }
+  .live-feed .creator { color: #4ecdc4; }
 
-  .step {
-    padding: 10px 12px;
+  .instructions {
     background: #141414;
     border: 1px solid #222;
     border-radius: 8px;
-    margin-bottom: 8px;
-  }
-  .step-num {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #4ecdc4;
-    color: #000;
-    text-align: center;
-    line-height: 20px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
     font-size: 11px;
-    font-weight: 700;
-    margin-right: 8px;
+    color: #999;
+    line-height: 1.5;
   }
-  .step-title { font-size: 12px; font-weight: 600; color: #fff; }
-  .step-desc { font-size: 10px; color: #777; margin-top: 4px; margin-left: 28px; }
+  .instructions strong { color: #e0e0e0; }
 </style>
 </head>
 <body>
   <h1>Live<span>Scope</span></h1>
   <p class="subtitle">TikTok livestream intelligence via Kalodata</p>
 
-  <!-- STEP 1: GRAB CREATORS -->
-  <div class="step">
-    <span class="step-num">1</span>
-    <span class="step-title">Browse Kalodata with your filters</span>
-    <div class="step-desc">Go to Creator Rankings, apply filters (Live, Independent, etc), then:</div>
+  <div class="recording-indicator" id="recordingIndicator">
+    <div class="rec-dot"></div>
+    <span>Recording — browse Kalodata, data captures automatically</span>
+    <span id="captureCounter" style="margin-left:auto; font-weight:600;">0</span>
   </div>
 
-  <button class="btn btn-primary" id="grabFromPage">Grab Creators from Page</button>
-
-  <!-- STEP 2: FETCH DETAILS -->
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Start Date</label>
-      <input type="date" class="form-input" id="startDate">
+  <div id="startView">
+    <div class="instructions">
+      <strong>How it works:</strong><br>
+      1. Hit Record below<br>
+      2. Browse Kalodata — click into creators and their livestreams<br>
+      3. Come back and hit Stop — all data captured automatically
     </div>
-    <div class="form-group">
-      <label class="form-label">End Date</label>
-      <input type="date" class="form-input" id="endDate">
-    </div>
-    <div class="form-group" style="flex: 0 0 70px;">
-      <label class="form-label">Delay (ms)</label>
-      <input type="number" class="form-input" id="fetchDelay" value="2000" min="500" max="10000">
-    </div>
+    <button class="btn btn-primary" id="recordBtn">Start Recording</button>
   </div>
 
-  <button class="btn" id="startFetch">Fetch Livestreams + Products</button>
-
-  <div class="progress-bar" id="progressBar" style="display:none">
-    <div class="progress-fill" id="progressFill"></div>
+  <div id="recordingView" style="display:none">
+    <div class="live-feed" id="liveFeed"></div>
+    <button class="btn btn-record" id="stopBtn">Stop Recording</button>
   </div>
 
-  <div class="fetch-log" id="fetchLog" style="display:none"></div>
-
-  <!-- RESULTS -->
-  <div id="activeResults" style="display:none; margin-top: 12px;">
+  <div id="resultsView" style="display:none">
     <div class="stats">
       <div class="stat-card">
-        <div class="stat-num" id="activeCreatorCount">0</div>
+        <div class="stat-num" id="creatorCount">0</div>
         <div class="stat-label">Creators</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num" id="activeLsCount">0</div>
+        <div class="stat-num" id="livestreamCount">0</div>
         <div class="stat-label">Livestreams</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num" id="activeTotalRev">$0</div>
-        <div class="stat-label">Total Rev</div>
+        <div class="stat-num" id="productCount">0</div>
+        <div class="stat-label">Products</div>
       </div>
     </div>
 
@@ -218,29 +200,25 @@
           <tr>
             <th>Creator</th>
             <th>Revenue</th>
-            <th>Items</th>
+            <th>Duration</th>
             <th>Products</th>
           </tr>
         </thead>
-        <tbody id="activeResultsBody"></tbody>
+        <tbody id="resultsBody"></tbody>
       </table>
     </div>
+
+    <button class="btn btn-primary" id="sendToLiveScope">Send to LiveScope</button>
+    <div class="btn-row">
+      <button class="btn" id="exportCSV">Export CSV</button>
+      <button class="btn" id="exportJSON">Export JSON</button>
+    </div>
+    <button class="btn" id="recordMoreBtn">Record More</button>
   </div>
 
-  <!-- EXPORT -->
-  <div style="margin-top: 12px;">
-    <button class="btn btn-primary" id="sendActiveToLiveScope">Send to LiveScope</button>
-    <div class="btn-row">
-      <button class="btn" id="exportActiveCSV">Export CSV</button>
-      <button class="btn" id="exportActiveJSON">Export JSON</button>
-    </div>
-    <button class="btn btn-danger" id="clearBtn" style="margin-top: 4px;">Clear Data</button>
-  </div>
+  <button class="btn btn-danger" id="clearBtn">Clear All Data</button>
 
   <div class="status" id="status"></div>
-
-  <!-- Hidden fields for backwards compat -->
-  <textarea id="creatorIds" style="display:none"></textarea>
 
 <script src="popup.js"></script>
 </body>
