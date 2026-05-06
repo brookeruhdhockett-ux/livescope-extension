@@ -51,12 +51,14 @@
 
       const urlPath = new URL(url, window.location.origin).pathname;
 
-      // Skip noise endpoints
-      if (urlPath.includes('/user/') || urlPath.includes('/api/') ||
-          urlPath.includes('/features') || urlPath.includes('/homepage/') ||
-          urlPath.includes('/focus/') || urlPath.includes('/access') ||
-          urlPath.includes('/count') || urlPath.includes('/history/') ||
-          urlPath.includes('searchShopList') || urlPath.includes('topLabel')) return;
+      // Skip noise endpoints (be specific to avoid blocking real data)
+      if (urlPath.includes('/user/query') || urlPath.includes('/user/features') ||
+          urlPath.includes('/api/firstDay') || urlPath.includes('/api/allLastDay') ||
+          urlPath.includes('/api/configurations') || urlPath.includes('/api/log') ||
+          urlPath.includes('/homepage/') || urlPath.includes('/focus/') ||
+          urlPath.includes('/detail/access') || urlPath.includes('/video/count') ||
+          urlPath.includes('/history/total') || urlPath.includes('searchShopList') ||
+          urlPath.includes('topLabel')) return;
 
       // Accept responses with success:true OR code:0 OR just having a data field
       const isSuccess = parsed.success === true || parsed.code === 0 || parsed.code === '0';
@@ -87,13 +89,22 @@
       }
 
       const pageUrl = window.location.href;
+
+      // Extract IDs from page URL for linking
+      const pageIdMatch = pageUrl.match(/[?&]id=(\d+)/);
+      const pageEntityId = pageIdMatch ? pageIdMatch[1] : '';
+      const isLivestreamPage = pageUrl.includes('/livestream/detail');
+      const isCreatorPage = pageUrl.includes('/creator/detail');
+
       const record = {
         timestamp: new Date().toISOString(),
         captureType,
         urlPath,
         url: url.substring(0, 200),
         method,
-        pageUrl: pageUrl.substring(0, 200),
+        pageUrl: pageUrl.substring(0, 300),
+        pageEntityId,
+        pageType: isLivestreamPage ? 'livestream' : (isCreatorPage ? 'creator' : 'other'),
         params,
         data: data,
         rawDataLength: Array.isArray(data) ? data.length : 1

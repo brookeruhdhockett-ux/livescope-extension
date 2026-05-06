@@ -194,6 +194,7 @@ function processAndRender(captures) {
 
       // PRODUCTS — from product endpoints OR livestream detail pages
       if (type === 'products' || type === 'livestream_detail') {
+        const livestreamId = (c.pageType === 'livestream') ? c.pageEntityId : '';
         const prod = {
           title: item.product_title || item.title || item.productName || item.product_name || item.name || '',
           price: item.unit_price || item.price || item.unitPrice || 0,
@@ -201,12 +202,21 @@ function processAndRender(captures) {
           sale: item.sale || item.saleCount || item.sale_count || 0,
           id: item.id || item.productId || item.product_id || '',
           seller: item.seller_id || '',
-          creator: bestCreator
+          creator: bestCreator,
+          livestreamId: livestreamId
         };
         if (prod.title) {
           products.push(prod);
           if (bestCreator && creators.has(bestCreator)) {
             creators.get(bestCreator).products.push(prod);
+          }
+          // Also attach to the specific livestream
+          if (livestreamId) {
+            const ls = livestreams.find(l => l.id === livestreamId);
+            if (ls) {
+              if (!ls.products) ls.products = [];
+              ls.products.push(prod);
+            }
           }
         }
         return;
