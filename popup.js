@@ -80,85 +80,129 @@ function processAndRender(captures) {
   const livestreams = [];
   const products = [];
 
+  // Track which creator we're looking at based on page URL
+  let lastCreatorId = '';
+  let lastCreatorName = '';
+
   captures.forEach(c => {
     if (!c.data) return;
-    const items = Array.isArray(c.data) ? c.data : [c.data];
 
-    items.forEach(item => {
-      // Creator data (from creator rankings or detail)
-      if (item.handle || item.nickname || item.username) {
-        const handle = item.handle || item.nickname || item.username;
-        if (!creators.has(handle)) {
+    // Extract creator context from page URL
+    const pageCreatorId = extractCreatorIdFromUrl(c.pageUrl);
+    if (pageCreatorId) {
+      lastCreatorId = pageCreatorId;
+    }
+
+    const type = c.captureType || 'unknown';
+    const items = Array.isArray(c.data) ? c.data : (c.data.records || c.data.list || [c.data]);
+
+    // Handle pagination wrapper: {records: [...], total: N}
+    let itemList = items;
+    if (!Array.isArray(items) && items.records) {
+      itemList = items.records;
+    } else if (!Array.isArray(items) && items.list) {
+      itemList = items.list;
+    }
+    if (!Array.isArray(itemList)) itemList = [itemList];
+
+    itemList.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+
+      // CREATOR RANKINGS — from /creator/queryList
+      if (type === 'creator_rankings') {
+        const handle = item.handle || item.nickname || item.username || '';
+        if (handle) {
           creators.set(handle, {
             handle,
             nickname: item.nickname || item.handle || '',
-            revenue: item.revenue || '',
-            sale: item.sale || '',
-            followers: item.followers || '',
-            id: item.id || item.uid || '',
+            revenue: formatNum(item.revenue),
+            sale: formatNum(item.sale),
+            followers: formatNum(item.followers),
+            id: item.uid || item.id || '',
             livestreams: [],
             products: [],
             durations: []
           });
         }
-        const existing = creators.get(handle);
-        // Update with richer data if available
-        if (item.revenue && !existing.revenue) existing.revenue = item.revenue;
-        if (item.followers && !existing.followers) existing.followers = item.followers;
       }
 
-      // Livestream/video data (has duration, gpm, views in a stream context)
-      if (item.duration || item.live_duration || item.gpm) {
+      // CREATOR LIVESTREAMS — from /creator/detail/video/queryList
+      if (type === 'creator_livestreams' || type === 'creator_detail') {
+        const creatorName = findCreatorByPageId(pageCreatorId, creators) || lastCreatorName || '';
         const ls = {
-          id: item.id,
+          id: item.id || item.videoId || '',
           title: item.title || item.description || '',
-          duration: item.duration || item.live_duration || '',
-          revenue: item.revenue || '',
-          gpm: item.gpm || '',
-          sale: item.sale || '',
-          views: item.views || '',
-          creator: item.handle || item.creator_name || item.username || extractCreatorFromCapture(c) || ''
+          duration: formatDuration(item.duration || item.live_duration || item.liveDuration || ''),
+          revenue: formatNum(item.revenue),
+          gpm: formatNum(item.gpm),
+          sale: formatNum(item.sale),
+          views: formatNum(item.views || item.viewCount || item.view_count),
+          creator: creatorName,
+          date: item.date || item.createTime || item.liveTime || ''
         };
         livestreams.push(ls);
 
-        // Attach to creator if we can match
-        if (ls.creator && creators.has(ls.creator)) {
-          const cr = creators.get(ls.creator);
+        if (creatorName && creators.has(creatorName)) {
+          const cr = creators.get(creatorName);
           cr.livestreams.push(ls);
           if (ls.duration) cr.durations.push(ls.duration);
         }
       }
 
-      // Product data (has title + price or product-like fields)
-      if (item.title && (item.price || item.unit_price || item.product_id || item.product_name)) {
+      // PRODUCTS — from /video/detail/stat/queryProductList
+      if (type === 'products') {
         const prod = {
-          title: item.title || item.product_name || item.name || '',
-          price: item.price || item.unit_price || '',
-          revenue: item.revenue || '',
-          sale: item.sale || '',
-          id: item.id || item.product_id || ''
+          title: item.title || item.productName || item.product_name || item.name || '',
+          price: formatPrice(item.price || item.unitPrice || item.unit_price || ''),
+          revenue: formatNum(item.revenue),
+          sale: formatNum(item.sale || item.saleCount || item.sale_count),
+          id: item.id || item.productId || item.product_id || '',
+          image: item.image || item.coverUrl || item.cover_url || ''
         };
-        products.push(prod);
-      }
-    });
-  });
+        if (prod.title) {
+          products.push(prod);
 
-  // Also try to match livestreams to creators by looking at capture page URLs
-  captures.forEach(c => {
-    const creator = extractCreatorFromCapture(c);
-    if (creator && creators.has(creator)) {
-      const cr = creators.get(creator);
-      const items = Array.isArray(c.data) ? c.data : [c.data];
-      items.forEach(item => {
-        // Products from creator detail pages
-        if (item.title && (item.price || item.unit_price || item.sale)) {
-          const name = item.title || item.product_name || '';
-          if (name && !cr.products.find(p => p.title === name)) {
-            cr.products.push({ title: name, price: item.price || item.unit_price || '', revenue: item.revenue || '' });
+          // Try to attach to a creator via the livestream page context
+          const creatorName = findCreatorByPageId(pageCreatorId, creators);
+          if (creatorName && creators.has(creatorName)) {
+            const cr = creators.get(creatorName);
+            if (!cr.products.find(p => p.title === prod.title)) {
+              cr.products.push(prod);
+            }
           }
         }
-      });
-    }
+      }
+
+      // GENERIC FALLBACK — try to identify data by its shape
+      if (type === 'unknown' || type === 'video_detail') {
+        // Creator-like
+        if ((item.handle || item.nickname) && !item.duration && !item.productName) {
+          const handle = item.handle || item.nickname || '';
+          if (handle && !creators.has(handle)) {
+            creators.set(handle, {
+              handle, nickname: item.nickname || '', revenue: formatNum(item.revenue),
+              sale: formatNum(item.sale), followers: formatNum(item.followers),
+              id: item.uid || item.id || '', livestreams: [], products: [], durations: []
+            });
+          }
+        }
+        // Livestream-like
+        if (item.duration || item.liveDuration || item.gpm) {
+          const creatorName = item.handle || findCreatorByPageId(pageCreatorId, creators) || '';
+          livestreams.push({
+            id: item.id || '', title: item.title || '', duration: formatDuration(item.duration || item.liveDuration || ''),
+            revenue: formatNum(item.revenue), gpm: formatNum(item.gpm), sale: formatNum(item.sale),
+            views: formatNum(item.views), creator: creatorName, date: item.date || ''
+          });
+        }
+        // Product-like
+        if (item.title && (item.price || item.unitPrice || item.productId)) {
+          const prod = { title: item.title || '', price: formatPrice(item.price || item.unitPrice || ''),
+            revenue: formatNum(item.revenue), sale: formatNum(item.sale), id: item.id || item.productId || '' };
+          products.push(prod);
+        }
+      }
+    });
   });
 
   // Render
@@ -169,32 +213,32 @@ function processAndRender(captures) {
   const tbody = document.getElementById('resultsBody');
   const rows = [];
 
-  // If we have livestreams, show per-livestream rows
-  if (livestreams.length > 0) {
-    livestreams.forEach(ls => {
-      rows.push(`<tr>
-        <td>${ls.creator || '—'}</td>
-        <td>${ls.revenue || '—'}</td>
-        <td>${ls.duration || '—'}</td>
-        <td class="products">—</td>
-      </tr>`);
-    });
-  }
-
-  // Always show creator-level rows
+  // Show creator rows with their livestream/product counts
   creators.forEach((cr, handle) => {
+    const lsCount = cr.livestreams.length;
     const prodNames = cr.products.map(p => p.title).slice(0, 3).join(', ');
     const prodDisplay = prodNames || (cr.products.length > 0 ? cr.products.length + ' products' : '—');
     const durDisplay = cr.durations.length > 0 ? cr.durations[0] : '—';
     rows.push(`<tr>
-      <td>${handle}</td>
-      <td>${cr.revenue || '—'}</td>
-      <td>${durDisplay}</td>
-      <td class="products" title="${cr.products.map(p => p.title).join(', ')}">${prodDisplay}</td>
+      <td>${esc(handle)}${lsCount > 0 ? ' <small style="color:#4ecdc4">(' + lsCount + ' streams)</small>' : ''}</td>
+      <td>${esc(cr.revenue) || '—'}</td>
+      <td>${esc(durDisplay)}</td>
+      <td class="products" title="${esc(cr.products.map(p => p.title).join(', '))}">${esc(prodDisplay)}</td>
     </tr>`);
   });
 
-  tbody.innerHTML = rows.join('');
+  // Show standalone livestreams not attached to creators
+  const orphanStreams = livestreams.filter(ls => !ls.creator || !creators.has(ls.creator));
+  orphanStreams.forEach(ls => {
+    rows.push(`<tr>
+      <td>${esc(ls.creator) || '—'}</td>
+      <td>${esc(ls.revenue) || '—'}</td>
+      <td>${esc(ls.duration) || '—'}</td>
+      <td class="products">—</td>
+    </tr>`);
+  });
+
+  tbody.innerHTML = rows.length > 0 ? rows.join('') : '<tr><td colspan="4" style="text-align:center;color:#777;padding:20px">No data captured yet. Browse Kalodata creator pages while recording.</td></tr>';
 
   // Store processed data for export
   chrome.storage.local.set({
@@ -202,6 +246,51 @@ function processAndRender(captures) {
     processedLivestreams: livestreams,
     processedProducts: products
   });
+}
+
+function extractCreatorIdFromUrl(url) {
+  if (!url) return '';
+  const match = url.match(/[?&]id=(\d+)/);
+  return match ? match[1] : '';
+}
+
+function findCreatorByPageId(id, creators) {
+  if (!id) return '';
+  for (const [handle, cr] of creators) {
+    if (cr.id === id) return handle;
+  }
+  return '';
+}
+
+function formatNum(val) {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+  if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+  return String(val);
+}
+
+function formatDuration(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  // If it's seconds, convert
+  if (typeof val === 'number' && val > 60) {
+    const h = Math.floor(val / 3600);
+    const m = Math.floor((val % 3600) / 60);
+    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+  }
+  return String(val);
+}
+
+function formatPrice(val) {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  return '$' + Number(val).toFixed(2);
+}
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function extractCreatorFromCapture(capture) {

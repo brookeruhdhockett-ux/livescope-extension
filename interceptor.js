@@ -50,17 +50,31 @@
       if (!data || !data.success) return;
 
       const urlPath = new URL(url, window.location.origin).pathname;
-      const endpoint = urlPath.split('/').pop();
 
       let params = {};
       if (requestBody) {
         try { params = JSON.parse(requestBody); } catch(e) {}
       }
 
+      // Tag the capture type based on URL path
+      let captureType = 'unknown';
+      if (urlPath.includes('/creator/queryList')) {
+        captureType = 'creator_rankings';
+      } else if (urlPath.includes('/creator/detail/video/queryList') || urlPath.includes('/creator/detail/livestream/queryList')) {
+        captureType = 'creator_livestreams';
+      } else if (urlPath.includes('/video/detail/stat/queryProductList') || urlPath.includes('queryProductList')) {
+        captureType = 'products';
+      } else if (urlPath.includes('/creator/detail') && urlPath.includes('query')) {
+        captureType = 'creator_detail';
+      } else if (urlPath.includes('/video/detail')) {
+        captureType = 'video_detail';
+      }
+
       const pageUrl = window.location.href;
       const record = {
         timestamp: new Date().toISOString(),
-        endpoint,
+        captureType,
+        urlPath,
         url: url.substring(0, 200),
         method,
         pageUrl: pageUrl.substring(0, 200),
