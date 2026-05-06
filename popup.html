@@ -139,6 +139,7 @@
     font-family: inherit;
   }
   .form-input:focus, .form-textarea:focus { border-color: #4ecdc4; outline: none; }
+  select.form-input { appearance: auto; }
   .form-textarea { resize: vertical; min-height: 80px; }
   .form-row { display: flex; gap: 8px; }
   .form-row .form-group { flex: 1; }
@@ -281,7 +282,20 @@
     </div>
 
     <button class="btn btn-primary" id="startFetch">Fetch Livestream Data</button>
-    <button class="btn" id="fetchTopCreators">Fetch Top Creators from Rankings</button>
+    <div class="form-row" style="align-items: end;">
+      <div class="form-group" style="flex: 0 0 80px;">
+        <label class="form-label">Top</label>
+        <select class="form-input" id="creatorCount">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <button class="btn" id="fetchTopCreators" style="margin-bottom:0;">Fetch Top Creators</button>
+      </div>
+    </div>
 
     <div class="progress-bar" id="progressBar" style="display:none">
       <div class="progress-fill" id="progressFill"></div>
@@ -320,12 +334,13 @@
         </table>
       </div>
 
-      <div style="margin-top: 8px;">
-        <button class="btn btn-primary" id="exportActiveCSV">Export Results as CSV</button>
-        <div class="btn-row">
-          <button class="btn" id="exportActiveJSON">Export JSON</button>
-          <button class="btn" id="sendActiveToLiveScope">Send to LiveScope</button>
-        </div>
+    </div>
+
+    <div style="margin-top: 12px;">
+      <button class="btn btn-primary" id="sendActiveToLiveScope">Send to LiveScope</button>
+      <div class="btn-row">
+        <button class="btn" id="exportActiveCSV">Export CSV</button>
+        <button class="btn" id="exportActiveJSON">Export JSON</button>
       </div>
     </div>
   </div>

@@ -156,12 +156,14 @@ async function fetchTopCreators() {
   showLog();
   log('Requesting livestream rankings...');
 
+  const count = parseInt(document.getElementById('creatorCount').value) || 20;
+
   chrome.runtime.sendMessage({
     type: 'ACTIVE_FETCH_CREATORS',
     startDate,
     endDate,
     pageNo: 1,
-    pageSize: 20
+    pageSize: count
   }, (response) => {
     if (!response || !response.success) {
       log('Failed: ' + (response?.error || 'No response — make sure you are logged into Kalodata'), 'error');
