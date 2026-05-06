@@ -13,33 +13,7 @@
   }
   h1 { font-size: 16px; color: #fff; margin-bottom: 2px; }
   h1 span { color: #4ecdc4; }
-  .subtitle { font-size: 11px; color: #777; margin-bottom: 12px; }
-
-  .tabs {
-    display: flex;
-    gap: 0;
-    margin-bottom: 16px;
-    border: 1px solid #222;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .tab {
-    flex: 1;
-    padding: 8px;
-    text-align: center;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    background: #141414;
-    color: #777;
-    border: none;
-    transition: all 0.2s;
-  }
-  .tab.active { background: #4ecdc4; color: #000; }
-  .tab:hover:not(.active) { color: #e0e0e0; }
-
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+  .subtitle { font-size: 11px; color: #777; margin-bottom: 16px; }
 
   .stats {
     display: grid;
@@ -58,43 +32,6 @@
   .stat-label { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.3px; }
 
   .section { margin-bottom: 12px; }
-  .section-title {
-    font-size: 11px;
-    color: #777;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-  }
-
-  .creator-list, .livestream-list {
-    max-height: 150px;
-    overflow-y: auto;
-    background: #141414;
-    border: 1px solid #222;
-    border-radius: 8px;
-    padding: 6px;
-  }
-  .creator-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 8px;
-    font-size: 12px;
-    border-radius: 4px;
-  }
-  .creator-item:hover { background: rgba(78,205,196,0.05); }
-  .creator-name { color: #4ecdc4; }
-  .creator-count { color: #777; }
-
-  .ls-item {
-    padding: 6px 8px;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1a1a;
-  }
-  .ls-item:last-child { border-bottom: none; }
-  .ls-title { color: #fff; font-weight: 500; }
-  .ls-meta { color: #777; margin-top: 2px; }
-  .ls-revenue { color: #51cf66; font-weight: 600; }
-  .ls-duration { color: #ffd43b; }
 
   .btn {
     width: 100%;
@@ -117,15 +54,12 @@
   }
   .btn-primary:hover { opacity: 0.9; color: #000; }
   .btn-danger { border-color: #ff6b6b; color: #ff6b6b; }
-  .btn-small { padding: 6px 12px; font-size: 11px; width: auto; display: inline-block; }
-
-  .status { font-size: 11px; color: #777; text-align: center; margin-top: 4px; }
-  .empty { text-align: center; padding: 20px; color: #555; font-size: 13px; }
 
   .btn-row { display: flex; gap: 8px; }
   .btn-row .btn { flex: 1; }
 
-  /* Active mode styles */
+  .status { font-size: 11px; color: #777; text-align: center; margin-top: 4px; }
+
   .form-group { margin-bottom: 12px; }
   .form-label { font-size: 11px; color: #777; margin-bottom: 4px; display: block; }
   .form-input, .form-textarea {
@@ -186,7 +120,7 @@
   }
 
   .fetch-log {
-    max-height: 100px;
+    max-height: 120px;
     overflow-y: auto;
     background: #0d0d0d;
     border: 1px solid #1a1a1a;
@@ -199,156 +133,114 @@
   }
   .fetch-log .success { color: #51cf66; }
   .fetch-log .error { color: #ff6b6b; }
+
+  .step {
+    padding: 10px 12px;
+    background: #141414;
+    border: 1px solid #222;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .step-num {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #4ecdc4;
+    color: #000;
+    text-align: center;
+    line-height: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .step-title { font-size: 12px; font-weight: 600; color: #fff; }
+  .step-desc { font-size: 10px; color: #777; margin-top: 4px; margin-left: 28px; }
 </style>
 </head>
 <body>
   <h1>Live<span>Scope</span></h1>
-  <p class="subtitle">Kalodata livestream intelligence</p>
+  <p class="subtitle">TikTok livestream intelligence via Kalodata</p>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="passive">Passive</button>
-    <button class="tab" data-tab="active">Active Mode</button>
+  <!-- STEP 1: GRAB CREATORS -->
+  <div class="step">
+    <span class="step-num">1</span>
+    <span class="step-title">Browse Kalodata with your filters</span>
+    <div class="step-desc">Go to Creator Rankings, apply filters (Live, Independent, etc), then:</div>
   </div>
 
-  <!-- PASSIVE TAB -->
-  <div class="tab-content active" id="tab-passive">
+  <button class="btn btn-primary" id="grabFromPage">Grab Creators from Page</button>
+
+  <!-- STEP 2: FETCH DETAILS -->
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Start Date</label>
+      <input type="date" class="form-input" id="startDate">
+    </div>
+    <div class="form-group">
+      <label class="form-label">End Date</label>
+      <input type="date" class="form-input" id="endDate">
+    </div>
+    <div class="form-group" style="flex: 0 0 70px;">
+      <label class="form-label">Delay (ms)</label>
+      <input type="number" class="form-input" id="fetchDelay" value="2000" min="500" max="10000">
+    </div>
+  </div>
+
+  <button class="btn" id="startFetch">Fetch Livestreams + Products</button>
+
+  <div class="progress-bar" id="progressBar" style="display:none">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <div class="fetch-log" id="fetchLog" style="display:none"></div>
+
+  <!-- RESULTS -->
+  <div id="activeResults" style="display:none; margin-top: 12px;">
     <div class="stats">
       <div class="stat-card">
-        <div class="stat-num" id="captureCount">0</div>
-        <div class="stat-label">Captures</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-num" id="creatorCount">0</div>
+        <div class="stat-num" id="activeCreatorCount">0</div>
         <div class="stat-label">Creators</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num" id="livestreamCount">0</div>
+        <div class="stat-num" id="activeLsCount">0</div>
         <div class="stat-label">Livestreams</div>
       </div>
-    </div>
-
-    <div class="section" id="livestreamSection" style="display:none">
-      <div class="section-title">Captured Livestreams</div>
-      <div class="livestream-list" id="livestreamList"></div>
-    </div>
-
-    <div class="section" id="creatorSection" style="display:none">
-      <div class="section-title">Creators Seen</div>
-      <div class="creator-list" id="creatorList"></div>
-    </div>
-
-    <div id="emptyState" class="empty">
-      Browse Kalodata normally — click into creators and livestreams. Data is captured automatically.
-    </div>
-
-    <div style="margin-top: 12px;">
-      <button class="btn btn-primary" id="exportBtn">Export All as CSV</button>
-      <div class="btn-row">
-        <button class="btn" id="exportJsonBtn">Export JSON</button>
-        <button class="btn" id="sendToLiveScope">Send to LiveScope</button>
+      <div class="stat-card">
+        <div class="stat-num" id="activeTotalRev">$0</div>
+        <div class="stat-label">Total Rev</div>
       </div>
-      <button class="btn btn-danger" id="clearBtn" style="margin-top: 4px;">Clear All Data</button>
+    </div>
+
+    <div class="results-wrap">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Creator</th>
+            <th>Revenue</th>
+            <th>Items</th>
+            <th>Products</th>
+          </tr>
+        </thead>
+        <tbody id="activeResultsBody"></tbody>
+      </table>
     </div>
   </div>
 
-  <!-- ACTIVE MODE TAB -->
-  <div class="tab-content" id="tab-active">
-    <div class="form-group">
-      <label class="form-label">Creator IDs (one per line — Kalodata numeric IDs)</label>
-      <textarea class="form-textarea" id="creatorIds" placeholder="7456964605728703534&#10;7389201456789012345&#10;7412345678901234567"></textarea>
-      <div class="form-hint">Find IDs in the URL when viewing a creator on Kalodata, or use "Fetch Top Creators" below</div>
+  <!-- EXPORT -->
+  <div style="margin-top: 12px;">
+    <button class="btn btn-primary" id="sendActiveToLiveScope">Send to LiveScope</button>
+    <div class="btn-row">
+      <button class="btn" id="exportActiveCSV">Export CSV</button>
+      <button class="btn" id="exportActiveJSON">Export JSON</button>
     </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Start Date</label>
-        <input type="date" class="form-input" id="startDate">
-      </div>
-      <div class="form-group">
-        <label class="form-label">End Date</label>
-        <input type="date" class="form-input" id="endDate">
-      </div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Results per creator</label>
-        <input type="number" class="form-input" id="pageSize" value="50" min="1" max="100">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Delay between (ms)</label>
-        <input type="number" class="form-input" id="fetchDelay" value="2000" min="500" max="10000">
-      </div>
-    </div>
-
-    <button class="btn btn-primary" id="startFetch">Fetch Livestream Data</button>
-    <button class="btn btn-primary" id="grabFromPage">Grab Creators from Kalodata Page</button>
-    <div class="form-hint" style="margin-bottom:8px;">Apply your filters on Kalodata first, then click above to pull those creators.</div>
-
-    <div class="form-row" style="align-items: end;">
-      <div class="form-group" style="flex: 0 0 80px;">
-        <label class="form-label">Top</label>
-        <select class="form-input" id="creatorCount">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
-          <option value="50">50</option>
-          <option value="100">100</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <button class="btn" id="fetchTopCreators" style="margin-bottom:0;">Or Fetch via API</button>
-      </div>
-    </div>
-
-    <div class="progress-bar" id="progressBar" style="display:none">
-      <div class="progress-fill" id="progressFill"></div>
-    </div>
-
-    <div class="fetch-log" id="fetchLog" style="display:none"></div>
-
-    <div id="activeResults" style="display:none; margin-top: 12px;">
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-num" id="activeCreatorCount">0</div>
-          <div class="stat-label">Creators</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="activeLsCount">0</div>
-          <div class="stat-label">Livestreams</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="activeTotalRev">$0</div>
-          <div class="stat-label">Total Rev</div>
-        </div>
-      </div>
-
-      <div class="results-wrap">
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th>Creator</th>
-              <th>Duration</th>
-              <th>Revenue</th>
-              <th>GPM</th>
-              <th>Products</th>
-            </tr>
-          </thead>
-          <tbody id="activeResultsBody"></tbody>
-        </table>
-      </div>
-
-    </div>
-
-    <div style="margin-top: 12px;">
-      <button class="btn btn-primary" id="sendActiveToLiveScope">Send to LiveScope</button>
-      <div class="btn-row">
-        <button class="btn" id="exportActiveCSV">Export CSV</button>
-        <button class="btn" id="exportActiveJSON">Export JSON</button>
-      </div>
-    </div>
+    <button class="btn btn-danger" id="clearBtn" style="margin-top: 4px;">Clear Data</button>
   </div>
 
   <div class="status" id="status"></div>
+
+  <!-- Hidden fields for backwards compat -->
+  <textarea id="creatorIds" style="display:none"></textarea>
 
 <script src="popup.js"></script>
 </body>
