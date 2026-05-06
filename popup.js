@@ -223,11 +223,13 @@ async function fetchProductsForAll(items) {
     document.getElementById('progressFill').style.width = pct + '%';
 
     try {
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
       const response = await sendMessageAsync({
         type: 'ACTIVE_FETCH_PRODUCTS',
         livestreamId: ls.id,
-        pageNo: 1,
-        pageSize: 50
+        startDate,
+        endDate
       });
 
       if (response && response.success) {

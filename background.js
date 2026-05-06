@@ -65,8 +65,8 @@ function buildProductFetchCode(msg) {
   return {
     action: 'fetch_products',
     livestreamId: msg.livestreamId,
-    pageNo: msg.pageNo || 1,
-    pageSize: msg.pageSize || 50
+    startDate: msg.startDate,
+    endDate: msg.endDate
   };
 }
 
@@ -149,40 +149,23 @@ async function executeFetch(params) {
       return { success: !!data.success, data: data.data, creatorId: params.creatorId, creatorName: params.creatorName, endpoint: 'video' };
 
     } else if (params.action === 'fetch_products') {
-      // Try multiple possible product endpoints
-      const endpoints = [
-        'https://www.kalodata.com/livestream/detail/product/queryList',
-        'https://www.kalodata.com/livestream/product/queryList',
-        'https://www.kalodata.com/live/detail/product/queryList'
-      ];
-
-      for (const endpoint of endpoints) {
-        try {
-          const resp = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              id: params.livestreamId,
-              pageNo: params.pageNo,
-              pageSize: params.pageSize,
-              sort: { filter: 'revenue', type: 'DESC' },
-              authority: true
-            })
-          });
-          const text = await resp.text();
-          let data;
-          try { data = JSON.parse(text); } catch(e) {
-            continue; // try next endpoint
-          }
-          if (data.success && data.data) {
-            return { success: true, data: data.data, livestreamId: params.livestreamId, endpoint };
-          }
-        } catch(e) {
-          continue;
-        }
+      const resp = await fetch('https://www.kalodata.com/video/detail/stat/queryProductList', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: params.livestreamId,
+          startDate: params.startDate,
+          endDate: params.endDate,
+          authority: true
+        })
+      });
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); } catch(e) {
+        return { success: false, error: 'Not JSON: ' + text.substring(0, 100), livestreamId: params.livestreamId };
       }
-      return { success: false, error: 'All product endpoints failed for ' + params.livestreamId, livestreamId: params.livestreamId };
+      return { success: !!data.success, data: data.data, livestreamId: params.livestreamId };
 
     } else if (params.action === 'fetch_rankings') {
       const resp = await fetch('https://www.kalodata.com/livestream/queryList', {
